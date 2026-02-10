@@ -44,7 +44,7 @@ function createWindow() {
     // In development, load from Vite dev server
     mainWindow.loadURL('http://localhost:5173');
     // Open DevTools for debugging
-    mainWindow.webContents.openDevTools();
+    // mainWindow.webContents.openDevTools();
   } else {
     // In production, load the built files
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
@@ -188,29 +188,29 @@ function setupIPCHandlers() {
     }
   });
 
-// ========== PRINTING ==========
+  // ========== PRINTING ==========
 
-ipcMain.handle('print:bill', async (event, billData) => {
+  ipcMain.handle('print:bill', async (event, billData) => {
     console.log('📄 Opening bill preview');
 
     try {
-        // Create a visible preview window
-        const printWindow = new BrowserWindow({
-            width: 400,
-            height: 700,
-            title: 'Bill Preview - KM Unavagam',
-            webPreferences: {
-                nodeIntegration: false,
-                contextIsolation: true,
-            },
-            autoHideMenuBar: true,
-        });
+      // Create a visible preview window
+      const printWindow = new BrowserWindow({
+        width: 400,
+        height: 700,
+        title: 'Bill Preview - KM Unavagam',
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+        autoHideMenuBar: true,
+      });
 
-        // Generate HTML
-        const billHTML = generateBillHTML(billData);
+      // Generate HTML
+      const billHTML = generateBillHTML(billData);
 
-        // Wrap in preview container with print button
-        const previewHTML = `
+      // Wrap in preview container with print button
+      const previewHTML = `
                 <!DOCTYPE html>
                 <html>
                 <head>
@@ -266,17 +266,17 @@ ipcMain.handle('print:bill', async (event, billData) => {
                 </html>
             `;
 
-        // Load preview
-        await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(previewHTML)}`);
+      // Load preview
+      await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(previewHTML)}`);
 
-        console.log('✅ Preview window opened');
-        return { success: true, preview: true };
+      console.log('✅ Preview window opened');
+      return { success: true, preview: true };
 
     } catch (error) {
-        console.error('Preview error:', error);
-        throw error;
+      console.error('Preview error:', error);
+      throw error;
     }
-});
+  });
   // ========== FILE OPERATIONS ==========
 
   ipcMain.handle('file:saveImage', async (event, imageData, fileName) => {
