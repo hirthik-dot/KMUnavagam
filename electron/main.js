@@ -45,7 +45,7 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
     // Open DevTools for debugging
     // mainWindow.webContents.openDevTools();
-  //  mainWindow.webContents.openDevTools();
+    //  mainWindow.webContents.openDevTools();
   } else {
     // In production, load the built files
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
@@ -160,9 +160,9 @@ function setupIPCHandlers() {
   });
 
   // Save bill
-  ipcMain.handle('db:saveBill', async (event, items, totalAmount) => {
+  ipcMain.handle('db:saveBill', async (event, items, totalAmount, customerId) => {
     try {
-      return db.saveBill(items, totalAmount);
+      return db.saveBill(items, totalAmount, customerId);
     } catch (error) {
       console.error('Error saving bill:', error);
       throw error;
@@ -189,94 +189,148 @@ function setupIPCHandlers() {
     }
   });
 
-  // ========== PRINTING ==========
+  // ========== EXPENSES OPERATIONS ==========
 
-  ipcMain.handle('print:bill', async (event, billData) => {
-    console.log('📄 Opening bill preview');
-
+  // Add expense
+  ipcMain.handle('db:addExpense', async (event, description, amount, expenseDate) => {
     try {
-      // Create a visible preview window
-      const printWindow = new BrowserWindow({
-        width: 400,
-        height: 700,
-        title: 'Bill Preview - KM Unavagam',
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-        },
-        autoHideMenuBar: true,
-      });
-
-      // Generate HTML
-      const billHTML = generateBillHTML(billData);
-
-      // Wrap in preview container with print button
-      const previewHTML = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <style>
-                        body {
-                            margin: 0;
-                            padding: 0;
-                            font-family: Arial, sans-serif;
-                        }
-                        .preview-container {
-                            padding: 20px;
-                            background: #f0f0f0;
-                        }
-                        .bill-preview {
-                            background: white;
-                            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                            margin-bottom: 20px;
-                        }
-                        .print-button {
-                            width: 100%;
-                            padding: 15px;
-                            background: #10b981;
-                            color: white;
-                            border: none;
-                            border-radius: 5px;
-                            font-size: 16px;
-                            font-weight: bold;
-                            cursor: pointer;
-                        }
-                        .print-button:hover {
-                            background: #059669;
-                        }
-                        @media print {
-                            .preview-container {
-                                padding: 0;
-                                background: white;
-                            }
-                            .print-button {
-                                display: none;
-                            }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="preview-container">
-                        <div class="bill-preview">
-                            ${billHTML.replace('<!DOCTYPE html><html><head>', '').replace('</head><body>', '').replace('</body></html>', '')}
-                        </div>
-                        <button class="print-button" onclick="window.print()">🖨️ Print Bill</button>
-                    </div>
-                </body>
-                </html>
-            `;
-
-      // Load preview
-      await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(previewHTML)}`);
-
-      console.log('✅ Preview window opened');
-      return { success: true, preview: true };
-
+      return db.addExpense(description, amount, expenseDate);
     } catch (error) {
-      console.error('Preview error:', error);
+      console.error('Error adding expense:', error);
       throw error;
     }
+  });
+
+  // Get expenses by date range
+  ipcMain.handle('db:getExpensesByDateRange', async (event, startDate, endDate) => {
+    try {
+      return db.getExpensesByDateRange(startDate, endDate);
+    } catch (error) {
+      console.error('Error getting expenses:', error);
+      throw error;
+    }
+  });
+
+  // Get expenses by specific date
+  ipcMain.handle('db:getExpensesByDate', async (event, date) => {
+    try {
+      return db.getExpensesByDate(date);
+    } catch (error) {
+      console.error('Error getting expenses by date:', error);
+      throw error;
+    }
+  });
+
+  // ========== RECORDS OPERATIONS ==========
+
+  // Get daily records (sales, expenses, profit)
+  ipcMain.handle('db:getDailyRecords', async (event, startDate, endDate) => {
+    try {
+      return db.getDailyRecords(startDate, endDate);
+    } catch (error) {
+      console.error('Error getting daily records:', error);
+      throw error;
+    }
+  });
+
+  // Get bills by specific date
+  ipcMain.handle('db:getBillsByDate', async (event, date) => {
+    try {
+      return db.getBillsByDate(date);
+    } catch (error) {
+      console.error('Error getting bills by date:', error);
+      throw error;
+    }
+  });
+
+  // ========== CREDIT OPERATIONS ==========
+
+  // Add credit customer
+  ipcMain.handle('db:addCreditCustomer', async (event, name, phone) => {
+    try {
+      return db.addCreditCustomer(name, phone);
+    } catch (error) {
+      console.error('Error adding credit customer:', error);
+      throw error;
+    }
+  });
+
+  // Get all credit customers
+  ipcMain.handle('db:getAllCreditCustomers', async (event) => {
+    try {
+      return db.getAllCreditCustomers();
+    } catch (error) {
+      console.error('Error getting credit customers:', error);
+      throw error;
+    }
+  });
+
+  // Get credit customer details
+  ipcMain.handle('db:getCreditCustomerDetails', async (event, customerId) => {
+    try {
+      return db.getCreditCustomerDetails(customerId);
+    } catch (error) {
+      console.error('Error getting credit customer details:', error);
+      throw error;
+    }
+  });
+
+  // Add credit payment
+  ipcMain.handle('db:addCreditPayment', async (event, customerId, amount, date) => {
+    try {
+      return db.addCreditPayment(customerId, amount, date);
+    } catch (error) {
+      console.error('Error adding credit payment:', error);
+      throw error;
+    }
+  });
+
+  // ========== PRINTING ==========
+
+  // ========== PRINTING ==========
+
+  // Legacy/Internal print:bill (Still opens a window if called)
+  ipcMain.handle('print:bill', async (event, billData) => {
+    const printWindow = new BrowserWindow({
+      width: 400,
+      height: 700,
+      show: true,
+      webPreferences: { nodeIntegration: true, contextIsolation: false }
+    });
+    const html = generateBillHTML(billData);
+    printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  });
+
+  // SILENT PRINTING (Used by React Preview Page)
+  ipcMain.handle('print:silent', async (event, billData, type) => {
+    console.log(`🖨️ Silent Printing Type: ${type}`);
+
+    return new Promise((resolve, reject) => {
+      const silentWin = new BrowserWindow({
+        show: false, // Hidden window
+        webPreferences: { nodeIntegration: true, contextIsolation: false }
+      });
+
+      const html = type === 'KOT' ? generateKOTHTML(billData) : generateBillHTML(billData);
+      silentWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+      silentWin.webContents.on('did-finish-load', () => {
+        silentWin.webContents.print({
+          silent: true,
+          printBackground: true,
+          deviceName: '' // Uses system default printer
+        }, (success, errorType) => {
+          if (!success) {
+            console.error('Print failed:', errorType);
+            reject(new Error(errorType));
+          } else {
+            console.log('Print successful');
+            resolve(true);
+          }
+          silentWin.close();
+        });
+      });
+    });
   });
   // ========== FILE OPERATIONS ==========
 
@@ -494,7 +548,7 @@ function generateBillHTML(billData) {
           <span>Created: ${dateTime}</span>
         </div>
         <div class="bill-info-row">
-          <span>Bill To: Cash Sale</span>
+          <span>Bill To: ${billData.customerName || 'Cash Sale'}</span>
         </div>
       </div>
       
@@ -544,15 +598,15 @@ function generateBillHTML(billData) {
       <div class="payment-info">
         <div class="payment-row">
           <span>Mode of Payment</span>
-          <span>cash</span>
+          <span>${billData.customerName ? 'CREDIT' : 'CASH'}</span>
         </div>
         <div class="payment-row">
-          <span>Received</span>
-          <span>${total.toFixed(0)}</span>
+          <span>Amount Paid</span>
+          <span>${billData.customerName ? '0' : total.toFixed(0)}</span>
         </div>
         <div class="payment-row">
-          <span>Prv Balance</span>
-          <span>0</span>
+          <span>Pending Bal</span>
+          <span>${billData.customerName ? total.toFixed(0) : '0'}</span>
         </div>
       </div>
       
@@ -561,6 +615,62 @@ function generateBillHTML(billData) {
       <div class="footer">
         <div class="bold">Thank You! Visit Again!</div>
       </div>
+    </body>
+    </html>
+  `;
+}
+
+/**
+ * Generate HTML for KOT (Staff Only)
+ */
+function generateKOTHTML(billData) {
+  const { items, dateTime } = billData;
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {
+          font-family: 'Courier New', Courier, monospace;
+          width: 80mm;
+          padding: 10px;
+          margin: 0;
+        }
+        .center { text-align: center; }
+        .bold { font-weight: bold; }
+        .kot-title { font-size: 24px; border-bottom: 2px solid black; margin-bottom: 10px; }
+        .kot-date { font-size: 12px; margin-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { text-align: left; border-bottom: 1px solid black; font-size: 14px; }
+        td { padding: 8px 0; font-size: 18px; font-weight: bold; }
+        .qty { text-align: right; }
+        .footer { margin-top: 20px; border-top: 1px dashed black; padding-top: 10px; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+      <div class="center bold kot-title">KOT - PARCEL</div>
+      <div class="center kot-date">Date: ${dateTime}</div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>ITEM NAME</th>
+            <th class="qty">QTY</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(item => `
+            <tr>
+              <td>${item.name_tamil || item.name_english}</td>
+              <td class="qty">${item.quantity}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      
+      <div class="center bold footer">--- KITCHEN COPY ---</div>
     </body>
     </html>
   `;

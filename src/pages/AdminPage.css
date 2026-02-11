@@ -1,6 +1,26 @@
+/* Back Button */
+.back-btn-admin {
+    padding: 12px 24px;
+    background: white;
+    border: 2px solid #6b7280;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-bottom: 20px;
+}
+
+.back-btn-admin:hover {
+    background: #6b7280;
+    color: white;
+}
+
 .admin-page {
     max-width: 1200px;
     margin: 0 auto;
+    padding: 20px;
 }
 
 /* Form Section */

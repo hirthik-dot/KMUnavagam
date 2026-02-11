@@ -4,7 +4,7 @@ import Cart from '../components/Cart';
 import SearchBar from '../components/SearchBar';
 import './BillingPage.css';
 
-function BillingPage() {
+function BillingPage({ onNavigate, creditCustomer }) {
     const [foodItems, setFoodItems] = useState([]);
     const [filteredItems, setFilteredItems] = useState([]);
     const [cart, setCart] = useState([]);
@@ -104,63 +104,38 @@ function BillingPage() {
     /**
      * Print bill
      */
-    async function handlePrintBill() {
-        console.log('Print Bill button clicked!');
-        console.log('Cart:', cart);
-
+    const handlePrintBill = async () => {
         if (cart.length === 0) {
-            alert('Cart is empty! Please add items before printing.');
+            alert('Please add items to your bill first.');
             return;
         }
 
-        try {
-            console.log('Starting print process...');
+        const total = calculateTotal();
+        const now = new Date();
+        const dateTime = now.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+        });
 
-            // Calculate total
-            const total = calculateTotal();
-            console.log('Total:', total);
+        const customerId = creditCustomer?.creditCustomerId || null;
+        const customerName = creditCustomer?.customerName || null;
 
-            // Get current date and time
-            const now = new Date();
-            const dateTime = now.toLocaleString('en-IN', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true,
-            });
-            console.log('DateTime:', dateTime);
+        // Prepare data for preview
+        const billData = {
+            items: cart,
+            total: total,
+            dateTime: dateTime,
+            customerName: customerName,
+            creditCustomerId: customerId,
+            billNumber: 'PENDING', // Will be generated on save
+        };
 
-            // Save bill to database
-            console.log('Saving bill to database...');
-            const billId = await window.electronAPI.saveBill(cart, total);
-            console.log('Bill saved with ID:', billId);
-
-            // Prepare bill data for printing
-            const billData = {
-                billNumber: billId.toString().padStart(4, '0'),
-                items: cart,
-                total: total,
-                hotelName: 'KM UNAVAGAM',
-                address: 'Bodipalaiyam Main Road, Malumichampatti, Coimbatore, TAMIL NADU, 641050',
-                fssai: '12425003003008',
-                license: 'XQ0280707QF',
-                phone: '8072425524',
-                email: 'velprakashveli202@gmail.com',
-                dateTime: dateTime,
-            };
-            console.log('Bill data prepared:', billData);
-
-            // Print the bill (opens preview window)
-            const result = await window.electronAPI.printBill(billData);
-
-            // Clear cart after preview opens
-            setCart([]);
-        } catch (error) {
-            console.error('Error printing bill:', error);
-            alert('Failed to open bill preview. The bill has been saved to the database.');
-        }
+        // Navigate to preview page instead of printing immediately
+        onNavigate('print-preview', billData);
     }
 
     if (loading) {
@@ -174,6 +149,20 @@ function BillingPage() {
 
     return (
         <div className="billing-page">
+            {/* Back Button */}
+            {onNavigate && (
+                <button className="back-btn-billing" onClick={() => onNavigate(creditCustomer ? 'credits' : 'home')}>
+                    ← Back to {creditCustomer ? 'Credits' : 'Home'}
+                </button>
+            )}
+
+            {/* Credit Customer Banner */}
+            {creditCustomer && (
+                <div className="credit-banner">
+                    <p>📝 Billing for Credit Customer: <strong>{creditCustomer.customerName}</strong></p>
+                </div>
+            )}
+
             {/* Search Bar */}
             <div className="search-section">
                 <SearchBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} />

@@ -7,6 +7,7 @@
   "description": "Offline Hotel Billing Application",
   "author": "Hotel Management",
   "scripts": {
+    "electron": "npm run dev",
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
     "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",

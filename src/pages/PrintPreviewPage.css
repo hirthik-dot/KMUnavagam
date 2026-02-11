@@ -1,0 +1,185 @@
+.preview-page {
+    padding: 30px;
+    background-color: #1e293b;
+    min-height: 100vh;
+    color: white;
+}
+
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.preview-header h1 {
+    font-size: 32px;
+    margin: 0;
+}
+
+.previews-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.preview-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.preview-label {
+    margin-bottom: 15px;
+    color: #94a3b8;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+/* Simulated Paper Styles */
+.bill-paper {
+    background: white;
+    width: 80mm;
+    /* True thermal width */
+    min-height: 120mm;
+    padding: 15px;
+    color: black;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px;
+}
+
+.customer-bill {
+    border-top: 5px solid #10b981;
+}
+
+.kot-bill {
+    border-top: 5px solid #ef4444;
+}
+
+.logo-text {
+    font-size: 18px;
+    margin-bottom: 5px;
+}
+
+.KOT-text {
+    font-size: 24px;
+    margin-bottom: 10px;
+    text-decoration: underline;
+}
+
+.bill-center {
+    text-align: center;
+}
+
+.bold {
+    font-weight: bold;
+}
+
+.x-small {
+    font-size: 10px;
+}
+
+.bill-divider {
+    border-top: 1px dashed #000;
+    margin: 10px 0;
+}
+
+.bill-info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    margin-bottom: 5px;
+}
+
+.bill-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+}
+
+.bill-table th {
+    text-align: left;
+    border-bottom: 1px solid #000;
+    font-size: 11px;
+}
+
+.bill-table td {
+    padding: 5px 0;
+}
+
+.right {
+    text-align: right;
+}
+
+.bill-total-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 16px;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+.mt-10 {
+    margin-top: 10px;
+}
+
+.footer-text {
+    font-size: 10px;
+}
+
+/* Actions */
+.preview-footer-actions {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 50px;
+}
+
+.action-btn {
+    padding: 20px 40px;
+    font-size: 20px;
+    font-weight: 800;
+    border-radius: 12px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.bill-only {
+    background-color: #10b981;
+    color: white;
+}
+
+.kot-bill-combo {
+    background-color: #3b82f6;
+    color: white;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+}
+
+.cancel-btn {
+    background-color: #ef4444;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.action-btn:hover:not(:disabled) {
+    transform: translateY(-3px);
+    filter: brightness(1.1);
+}
+
+.preview-error {
+    text-align: center;
+    padding: 100px;
+}

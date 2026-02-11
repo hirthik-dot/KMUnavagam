@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import './AdminPage.css';
 
-function AdminPage() {
+function AdminPage({ onNavigate }) {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [editingItem, setEditingItem] = useState(null);
@@ -206,6 +206,13 @@ function AdminPage() {
 
     return (
         <div className="admin-page">
+            {/* Back Button */}
+            {onNavigate && (
+                <button className="back-btn-admin" onClick={() => onNavigate('home')}>
+                    ← Back to Home
+                </button>
+            )}
+
             {/* Add/Edit Form */}
             <div className="admin-form-section card">
                 <h2 className="section-title">

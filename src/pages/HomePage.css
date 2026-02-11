@@ -1,0 +1,145 @@
+/* HOME PAGE STYLES */
+/* White + Green theme, large touch-friendly buttons */
+
+.home-page {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.home-container {
+    max-width: 800px;
+    width: 100%;
+}
+
+/* Header */
+.home-header {
+    text-align: center;
+    margin-bottom: 50px;
+}
+
+.home-title {
+    font-size: 48px;
+    font-weight: bold;
+    color: #10b981;
+    margin: 0 0 10px 0;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.home-subtitle {
+    font-size: 20px;
+    color: #6b7280;
+    margin: 0;
+}
+
+/* Button Grid */
+.home-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 25px;
+    padding: 20px;
+}
+
+/* Large Buttons */
+.home-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    padding: 50px 30px;
+    border: none;
+    border-radius: 20px;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    background: white;
+    color: #333;
+}
+
+.home-btn:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.home-btn:active {
+    transform: translateY(-2px);
+}
+
+.btn-icon {
+    font-size: 60px;
+}
+
+.btn-text {
+    font-size: 24px;
+}
+
+/* Button Colors */
+.home-btn-billing {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+}
+
+.home-btn-billing:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+}
+
+.home-btn-records {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+}
+
+.home-btn-records:hover {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+.home-btn-expenses {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+}
+
+.home-btn-expenses:hover {
+    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+}
+
+.home-btn-admin {
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    color: white;
+}
+
+.home-btn-admin:hover {
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+}
+
+.home-btn-credits {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    color: white;
+}
+
+.home-btn-credits:hover {
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .home-buttons {
+        grid-template-columns: 1fr;
+    }
+
+    .home-title {
+        font-size: 36px;
+    }
+
+    .btn-icon {
+        font-size: 50px;
+    }
+
+    .btn-text {
+        font-size: 20px;
+    }
+}

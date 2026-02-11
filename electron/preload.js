@@ -33,8 +33,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ========== BILLS ==========
 
     // Save a bill to database
-    saveBill: (items, totalAmount) =>
-        ipcRenderer.invoke('db:saveBill', items, totalAmount),
+    saveBill: (items, totalAmount, customerId) =>
+        ipcRenderer.invoke('db:saveBill', items, totalAmount, customerId),
 
     // Get bill history
     getBillHistory: (limit) =>
@@ -44,11 +44,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getBillItems: (billId) =>
         ipcRenderer.invoke('db:getBillItems', billId),
 
-    // ========== PRINTING ==========
-
     // Print a bill
     printBill: (billData) =>
         ipcRenderer.invoke('print:bill', billData),
+
+    // Silent print (Bill or KOT)
+    printSilent: (billData, type) =>
+        ipcRenderer.invoke('print:silent', billData, type),
 
     // ========== FILE OPERATIONS ==========
 
@@ -59,4 +61,46 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Get image path
     getImagePath: (fileName) =>
         ipcRenderer.invoke('file:getImagePath', fileName),
+
+    // ========== EXPENSES ==========
+
+    // Add a new expense
+    addExpense: (description, amount, expenseDate) =>
+        ipcRenderer.invoke('db:addExpense', description, amount, expenseDate),
+
+    // Get expenses by date range
+    getExpensesByDateRange: (startDate, endDate) =>
+        ipcRenderer.invoke('db:getExpensesByDateRange', startDate, endDate),
+
+    // Get expenses by specific date
+    getExpensesByDate: (date) =>
+        ipcRenderer.invoke('db:getExpensesByDate', date),
+
+    // ========== RECORDS ==========
+
+    // Get daily records (sales, expenses, profit)
+    getDailyRecords: (startDate, endDate) =>
+        ipcRenderer.invoke('db:getDailyRecords', startDate, endDate),
+
+    // Get bills by specific date
+    getBillsByDate: (date) =>
+        ipcRenderer.invoke('db:getBillsByDate', date),
+
+    // ========== CREDIT SYSTEM ==========
+
+    // Add a new credit customer
+    addCreditCustomer: (name, phone) =>
+        ipcRenderer.invoke('db:addCreditCustomer', name, phone),
+
+    // Get all credit customers
+    getAllCreditCustomers: () =>
+        ipcRenderer.invoke('db:getAllCreditCustomers'),
+
+    // Get credit customer details
+    getCreditCustomerDetails: (customerId) =>
+        ipcRenderer.invoke('db:getCreditCustomerDetails', customerId),
+
+    // Add a credit payment
+    addCreditPayment: (customerId, amount, date) =>
+        ipcRenderer.invoke('db:addCreditPayment', customerId, amount, date),
 });

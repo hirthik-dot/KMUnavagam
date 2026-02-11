@@ -1,0 +1,208 @@
+.credits-page {
+    padding: 20px;
+    background-color: #f8fafc;
+    min-height: 100vh;
+}
+
+.credits-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    padding: 30px;
+}
+
+.credits-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    border-bottom: 2px solid #f1f5f9;
+    padding-bottom: 20px;
+}
+
+.credits-title {
+    color: #065f46;
+    font-size: 32px;
+    font-weight: 800;
+    margin: 0;
+}
+
+.credits-subtitle {
+    color: #64748b;
+    margin-top: 5px;
+    font-size: 16px;
+}
+
+.add-customer-btn {
+    background-color: #10b981;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-customer-btn:hover {
+    background-color: #059669;
+    transform: translateY(-1px);
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+.credits-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 18px;
+}
+
+.credits-table th {
+    text-align: left;
+    background-color: #f8fafc;
+    padding: 16px;
+    color: #475569;
+    font-weight: 700;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.credits-table td {
+    padding: 16px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+}
+
+.clickable-row {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.clickable-row:hover {
+    background-color: #f0fdf4;
+}
+
+.name-cell {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.amount-cell {
+    font-weight: 600;
+    text-align: right;
+}
+
+.paid {
+    color: #10b981;
+}
+
+.balance {
+    font-weight: 800;
+}
+
+.pending {
+    color: #ef4444;
+}
+
+/* Modal Styling */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    padding: 40px;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 500px;
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+}
+
+.modal-content h2 {
+    color: #065f46;
+    margin-top: 0;
+    margin-bottom: 25px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #334155;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 18px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 15px;
+    margin-top: 30px;
+}
+
+.cancel-btn {
+    flex: 1;
+    background: #f1f5f9;
+    color: #475569;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.save-btn {
+    flex: 2;
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.loading,
+.no-data {
+    text-align: center;
+    padding: 50px;
+    color: #64748b;
+    font-size: 20px;
+}
+
+.back-btn {
+    background: white;
+    border: 2px solid #e2e8f0;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    cursor: pointer;
+}
+
+.back-btn:hover {
+    background: #f8fafc;
+}
