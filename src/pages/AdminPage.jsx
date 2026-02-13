@@ -14,6 +14,10 @@ function AdminPage({ onNavigate }) {
     const [editingCategory, setEditingCategory] = useState(null);
     const [newCategoryName, setNewCategoryName] = useState('');
 
+    const [suppliers, setSuppliers] = useState([]);
+    const [editingSupplier, setEditingSupplier] = useState(null);
+    const [newSupplierName, setNewSupplierName] = useState('');
+
     const [categoryFilter, setCategoryFilter] = useState('All');
     const [toast, setToast] = useState(null);
     const [confirmDialog, setConfirmDialog] = useState(null);
@@ -27,10 +31,11 @@ function AdminPage({ onNavigate }) {
         imagePath: '',
     });
 
-    // Load all items when component mounts
+    // Load data when component mounts
     useEffect(() => {
         loadItems();
         loadCategories();
+        loadSuppliers();
     }, []);
 
     /**
@@ -127,6 +132,80 @@ function AdminPage({ onNavigate }) {
                 } catch (error) {
                     console.error('Error deleting category:', error);
                     showToast('Failed to delete category.', 'error');
+                }
+            },
+            onCancel: () => setConfirmDialog(null)
+        });
+    }
+
+    /**
+     * Load all suppliers
+     */
+    async function loadSuppliers() {
+        try {
+            const allSuppliers = await window.electronAPI.getAllSuppliersAdmin();
+            setSuppliers(allSuppliers);
+        } catch (error) {
+            console.error('Error loading suppliers:', error);
+            showToast('Failed to load suppliers.', 'error');
+        }
+    }
+
+    /**
+     * Add a new supplier
+     */
+    async function handleAddSupplier() {
+        if (!newSupplierName.trim()) {
+            showToast('Please enter a supplier name!', 'warning');
+            return;
+        }
+
+        try {
+            await window.electronAPI.addSupplier(newSupplierName.trim());
+            setNewSupplierName('');
+            loadSuppliers();
+            showToast('Supplier added successfully!');
+        } catch (error) {
+            console.error('Error adding supplier:', error);
+            showToast('Failed to add supplier.', 'error');
+        }
+    }
+
+    /**
+     * Update a supplier
+     */
+    async function handleUpdateSupplier(id, newName, isActive) {
+        if (!newName.trim()) {
+            showToast('Supplier name cannot be empty!', 'warning');
+            return;
+        }
+
+        try {
+            await window.electronAPI.updateSupplier(id, newName.trim(), isActive);
+            setEditingSupplier(null);
+            loadSuppliers();
+            showToast('Supplier updated successfully!');
+        } catch (error) {
+            console.error('Error updating supplier:', error);
+            showToast('Failed to update supplier.', 'error');
+        }
+    }
+
+    /**
+     * Delete a supplier
+     */
+    async function handleDeleteSupplier(id, name) {
+        setConfirmDialog({
+            message: `Are you sure you want to delete "${name}"?`,
+            onConfirm: async () => {
+                setConfirmDialog(null);
+                try {
+                    await window.electronAPI.deleteSupplier(id);
+                    loadSuppliers();
+                    showToast('Supplier deleted successfully!');
+                } catch (error) {
+                    console.error('Error deleting supplier:', error);
+                    showToast('Failed to delete supplier.', 'error');
                 }
             },
             onCancel: () => setConfirmDialog(null)
@@ -455,9 +534,10 @@ function AdminPage({ onNavigate }) {
                     {categories.map((category) => (
                         <div key={category.id} className="category-item">
                             {editingCategory === category.id ? (
-                                <>
+                                <div className="category-edit-container">
                                     <input
                                         type="text"
+                                        id={`edit-cat-${category.id}`}
                                         defaultValue={category.name}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
@@ -469,22 +549,24 @@ function AdminPage({ onNavigate }) {
                                         }}
                                         autoFocus
                                     />
-                                    <button
-                                        className="btn-success"
-                                        onClick={(e) => {
-                                            const input = e.target.previousSibling;
-                                            handleUpdateCategory(category.id, input.value);
-                                        }}
-                                    >
-                                        <i className="fas fa-check"></i>
-                                    </button>
-                                    <button
-                                        className="btn-secondary"
-                                        onClick={() => setEditingCategory(null)}
-                                    >
-                                        <i className="fas fa-times"></i>
-                                    </button>
-                                </>
+                                    <div className="category-actions">
+                                        <button
+                                            className="btn-success"
+                                            onClick={() => {
+                                                const val = document.getElementById(`edit-cat-${category.id}`).value;
+                                                handleUpdateCategory(category.id, val);
+                                            }}
+                                        >
+                                            <i className="fas fa-check"></i>
+                                        </button>
+                                        <button
+                                            className="btn-secondary"
+                                            onClick={() => setEditingCategory(null)}
+                                        >
+                                            <i className="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
                             ) : (
                                 <>
                                     <span className="category-name">
@@ -495,13 +577,13 @@ function AdminPage({ onNavigate }) {
                                             className="btn-edit"
                                             onClick={() => setEditingCategory(category.id)}
                                         >
-                                            <i className="fas fa-edit"></i>
+                                            <i className="fas fa-edit"></i> Edit
                                         </button>
                                         <button
                                             className="btn-delete"
                                             onClick={() => handleDeleteCategory(category.id, category.name)}
                                         >
-                                            <i className="fas fa-trash"></i>
+                                            <i className="fas fa-trash"></i> Delete
                                         </button>
                                     </div>
                                 </>
@@ -511,84 +593,178 @@ function AdminPage({ onNavigate }) {
                 </div>
             </div>
 
-            {/* Existing Items List */}
-            <div className="admin-items-section">
-                <div className="items-header">
-                    <h2 className="section-title">Existing Items ({filteredItems.length})</h2>
-                    
-                    <div className="filter-controls">
-                        <label htmlFor="categoryFilter">Filter by Category:</label>
-                        <select
-                            id="categoryFilter"
-                            value={categoryFilter}
-                            onChange={(e) => setCategoryFilter(e.target.value)}
-                            className="filter-select"
-                        >
-                            <option value="All">All Categories</option>
-                            {categories.map((cat) => (
-                                <option key={cat.id} value={cat.name}>
-                                    {cat.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
+                {/* Staff Management Section */}
+                <div className="staff-management-section card">
+                    <h2 className="section-title">
+                        <i className="fas fa-user-tie"></i> Manage Service Staff
+                    </h2>
 
-                {filteredItems.length === 0 ? (
-                    <div className="no-items card">
-                        {categoryFilter === 'All' ? (
-                            <p>No items found. Add your first item above!</p>
-                        ) : (
-                            <p>No items found in category "{categoryFilter}".</p>
-                        )}
+                    {/* Add New Staff */}
+                    <div className="add-category-form">
+                        <input
+                            type="text"
+                            placeholder="Staff name..."
+                            value={newSupplierName}
+                            onChange={(e) => setNewSupplierName(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleAddSupplier();
+                                }
+                            }}
+                        />
+                        <button className="btn-primary" onClick={handleAddSupplier}>
+                            <i className="fas fa-plus"></i> Add Staff
+                        </button>
                     </div>
-                ) : (
-                    <div className="items-grid">
-                        {filteredItems.map((item) => (
-                            <div
-                                key={item.id}
-                                className={`item-card card ${!item.is_active ? 'inactive' : ''}`}
-                            >
-                                {/* Item Info */}
-                                <div className="item-info">
-                                    <h3 className="item-name-tamil">{item.name_tamil}</h3>
-                                    <p className="item-name-english">{item.name_english}</p>
-                                    <p className="item-category">Category: <strong>{item.category}</strong></p>
-                                    <p className="item-price">₹{item.price.toFixed(2)}</p>
-                                    <p className="item-category">
-                                        <i className="fas fa-tag"></i> {item.category || 'Other'}
-                                    </p>
-                                    <p className="item-status">
-                                        {item.is_active ? 'Active' : 'Inactive'}
-                                    </p>
-                                </div>
 
-                                {/* Item Actions */}
-                                <div className="item-actions">
-                                    <button
-                                        className="btn-secondary"
-                                        onClick={() => handleEdit(item)}
-                                    >
-                                        <i className="fa-solid fa-pen-to-square"></i> Edit
-                                    </button>
-                                    <button
-                                        className={`btn-toggle ${item.is_active ? 'active' : 'inactive'}`}
-                                        onClick={() => handleToggleStatus(item)}
-                                    >
-                                        {item.is_active ? 'Disable' : 'Enable'}
-                                    </button>
-                                    <button
-                                        className="btn-danger"
-                                        onClick={() => handleDelete(item)}
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
+                    {/* Staff List */}
+                    <div className="category-list">
+                        {suppliers.map((supplier) => (
+                            <div key={supplier.id} className="category-item">
+                                {editingSupplier === supplier.id ? (
+                                    <div className="category-edit-container">
+                                        <input
+                                            type="text"
+                                            id={`edit-staff-${supplier.id}`}
+                                            defaultValue={supplier.name}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    handleUpdateSupplier(supplier.id, e.target.value, supplier.is_active);
+                                                }
+                                                if (e.key === 'Escape') {
+                                                    setEditingSupplier(null);
+                                                }
+                                            }}
+                                            autoFocus
+                                        />
+                                        <div className="category-actions">
+                                            <button
+                                                className="btn-success"
+                                                onClick={() => {
+                                                    const val = document.getElementById(`edit-staff-${supplier.id}`).value;
+                                                    handleUpdateSupplier(supplier.id, val, supplier.is_active);
+                                                }}
+                                            >
+                                                <i className="fas fa-check"></i>
+                                            </button>
+                                            <button
+                                                className="btn-secondary"
+                                                onClick={() => setEditingSupplier(null)}
+                                            >
+                                                <i className="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <span className={`category-name ${!supplier.is_active ? 'inactive-text' : ''}`}>
+                                            <i className="fas fa-user"></i> {supplier.name} {!supplier.is_active && '(Inactive)'}
+                                        </span>
+                                        <div className="category-actions">
+                                            <button
+                                                className={`btn-toggle ${supplier.is_active ? 'active' : 'inactive'}`}
+                                                onClick={() => handleUpdateSupplier(supplier.id, supplier.name, !supplier.is_active)}
+                                                title={supplier.is_active ? 'Deactivate' : 'Activate'}
+                                            >
+                                                <i className={`fas fa-${supplier.is_active ? 'eye' : 'eye-slash'}`}></i>
+                                            </button>
+                                            <button
+                                                className="btn-edit"
+                                                onClick={() => setEditingSupplier(supplier.id)}
+                                            >
+                                                <i className="fas fa-edit"></i> Edit
+                                            </button>
+                                            <button
+                                                className="btn-delete"
+                                                onClick={() => handleDeleteSupplier(supplier.id, supplier.name)}
+                                            >
+                                                <i className="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         ))}
                     </div>
-                )}
-            </div>
+                </div>
+
+                {/* Food Item Grid Section */}
+                <div className="admin-items-section">
+                    <div className="items-header">
+                        <h2 className="section-title">Existing Items ({filteredItems.length})</h2>
+                        
+                        <div className="filter-controls">
+                            <label htmlFor="categoryFilter">Filter by Category:</label>
+                            <select
+                                id="categoryFilter"
+                                value={categoryFilter}
+                                onChange={(e) => setCategoryFilter(e.target.value)}
+                                className="filter-select"
+                            >
+                                <option value="All">All Categories</option>
+                                {categories.map((cat) => (
+                                    <option key={cat.id} value={cat.name}>
+                                        {cat.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {filteredItems.length === 0 ? (
+                        <div className="no-items card">
+                            {categoryFilter === 'All' ? (
+                                <p>No items found. Add your first item above!</p>
+                            ) : (
+                                <p>No items found in category "{categoryFilter}".</p>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="items-grid">
+                            {filteredItems.map((item) => (
+                                <div
+                                    key={item.id}
+                                    className={`item-card card ${!item.is_active ? 'inactive' : ''}`}
+                                >
+                                    {/* Item Info */}
+                                    <div className="item-info">
+                                        <h3 className="item-name-tamil">{item.name_tamil}</h3>
+                                        <p className="item-name-english">{item.name_english}</p>
+                                        <p className="item-price">₹{item.price.toFixed(2)}</p>
+                                        <p className="item-category">
+                                            <i className="fas fa-tag"></i> {item.category || 'Other'}
+                                        </p>
+                                        <p className="item-status">
+                                            {item.is_active ? 'Active' : 'Inactive'}
+                                        </p>
+                                    </div>
+
+                                    {/* Item Actions */}
+                                    <div className="item-actions">
+                                        <button
+                                            className="btn-secondary"
+                                            onClick={() => handleEdit(item)}
+                                        >
+                                            <i className="fa-solid fa-pen-to-square"></i> Edit
+                                        </button>
+                                        <button
+                                            className={`btn-toggle ${item.is_active ? 'active' : 'inactive'}`}
+                                            onClick={() => handleToggleStatus(item)}
+                                        >
+                                            {item.is_active ? 'Disable' : 'Enable'}
+                                        </button>
+                                        <button
+                                            className="btn-danger"
+                                            onClick={() => handleDelete(item)}
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
             
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}

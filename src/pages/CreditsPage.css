@@ -7,18 +7,21 @@
 }
 
 .credits-container {
+    width: 100%;
     max-width: 1200px;
     margin: 0 auto;
     background: white;
     border-radius: 12px;
     box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
     padding: 30px;
+    flex: 1;
 }
 
 .credits-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 20px;
     margin-bottom: 30px;
     border-bottom: 2px solid #f1f5f9;
     padding-bottom: 20px;
@@ -47,6 +50,8 @@
     font-weight: 700;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .add-customer-btn:hover {

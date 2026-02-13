@@ -5,6 +5,8 @@
     min-height: 100vh;
     background: #FFFFFF;
     padding: 100px 20px 20px 20px;
+    display: flex;
+    flex-direction: column;
 }
 
 .back-btn {
@@ -34,6 +36,7 @@
     padding: 40px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     border: 1px solid #E5E7EB;
+    flex: 1;
 }
 
 /* Header */

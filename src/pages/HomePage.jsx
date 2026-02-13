@@ -9,6 +9,7 @@ import './HomePage.css';
  * White + Green theme, touch-friendly
  */
 function HomePage({ onNavigate }) {
+    const [currentTime, setCurrentTime] = useState(new Date());
     const [stats, setStats] = useState({
         cashSales: 0,
         creditSales: 0,
@@ -18,6 +19,13 @@ function HomePage({ onNavigate }) {
 
     useEffect(() => {
         loadTodayStats();
+        
+        // Live Clock Timer
+        const timer = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 1000);
+        
+        return () => clearInterval(timer);
     }, []);
 
     async function loadTodayStats() {
@@ -41,9 +49,40 @@ function HomePage({ onNavigate }) {
 
     return (
         <div className="home-page">
-            <PageHeader showBack={false} />
-            
             <div className="home-container">
+                {/* Hotel Header Section */}
+                <div className="home-hotel-header">
+                    <div className="hotel-brand-info">
+                        <h1 className="home-hotel-name">KM UNAVAGAM</h1>
+                        <p className="home-hotel-address">Bodipalaiyam Main Road, Malumichampatti, Coimbatore, 641050</p>
+                        <div className="home-hotel-details">
+                            <span className="hotel-detail-item"><i className="fas fa-certificate"></i> FSSAI: 12425003003008</span>
+                            <span className="hotel-detail-item"><i className="fab fa-google-pay"></i> GPay: 9629838800 / 7530031372</span>
+                            <span className="hotel-detail-item"><i className="fas fa-phone"></i> Ph: 8680031372</span>
+                        </div>
+                    </div>
+                    
+                    <div className="home-live-datetime">
+                        <div className="live-time-wrapper">
+                            <span className="live-time">
+                                {currentTime.toLocaleTimeString('en-IN', { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit', 
+                                    second: '2-digit',
+                                    hour12: true 
+                                })}
+                            </span>
+                        </div>
+                        <div className="live-date">
+                            {currentTime.toLocaleDateString('en-IN', { 
+                                weekday: 'long', 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric' 
+                            })}
+                        </div>
+                    </div>
+                </div>
                 {/* Stats Cards */}
                 <div className="home-stats">
                     <div className="stat-card stat-cash">

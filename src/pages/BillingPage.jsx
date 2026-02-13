@@ -4,6 +4,7 @@ import Cart from '../components/Cart';
 import SearchBar from '../components/SearchBar';
 import PageHeader from '../components/PageHeader';
 import Toast from '../components/Toast';
+import SupplierModal from '../components/SupplierModal';
 import './BillingPage.css';
 
 function BillingPage({ onNavigate, creditCustomer }) {
@@ -17,12 +18,15 @@ function BillingPage({ onNavigate, creditCustomer }) {
     const [originalBillId, setOriginalBillId] = useState(null);
 
     const [categories, setCategories] = useState([{ id: 0, name: 'All' }]);
+    const [suppliers, setSuppliers] = useState([]);
+    const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [toast, setToast] = useState(null);
 
     // Load food items and categories when component mounts
     useEffect(() => {
         loadFoodItems();
         loadCategories();
+        loadSuppliers();
     }, []);
 
     // Pre-fill cart if editing mode
@@ -84,6 +88,18 @@ function BillingPage({ onNavigate, creditCustomer }) {
             setCategories([{ id: 0, name: 'All' }, ...dbCategories]);
         } catch (error) {
             console.error('Error loading categories:', error);
+        }
+    }
+
+    /**
+     * Load all active suppliers
+     */
+    async function loadSuppliers() {
+        try {
+            const activeSuppliers = await window.electronAPI.getAllSuppliers();
+            setSuppliers(activeSuppliers);
+        } catch (error) {
+            console.error('Error loading suppliers:', error);
         }
     }
 
@@ -160,7 +176,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
     }
 
     /**
-     * Print bill
+     * Print bill - opens supplier modal first
      */
     const handlePrintBill = async () => {
         if (cart.length === 0) {
@@ -168,6 +184,20 @@ function BillingPage({ onNavigate, creditCustomer }) {
             return;
         }
 
+        // If no suppliers are added, skip modal and go straight to preview
+        if (suppliers.length === 0) {
+            confirmPrintWithSupplier(null);
+        } else {
+            setShowSupplierModal(true);
+        }
+    }
+
+    /**
+     * Proceed to preview after supplier selection
+     */
+    const confirmPrintWithSupplier = (supplier) => {
+        setShowSupplierModal(false);
+        
         const total = calculateTotal();
         const now = new Date();
         const dateTime = now.toLocaleString('en-IN', {
@@ -189,12 +219,14 @@ function BillingPage({ onNavigate, creditCustomer }) {
             dateTime: dateTime,
             customerName: customerName,
             creditCustomerId: customerId,
+            supplierId: supplier?.id || null,
+            supplierName: supplier?.name || null,
             billNumber: editMode ? originalBillId : 'PENDING',
             editMode: editMode,
             originalBillId: originalBillId
         };
 
-        // Navigate to preview page instead of printing immediately
+        // Navigate to preview page
         onNavigate('print-preview', billData);
     }
 
@@ -215,6 +247,14 @@ function BillingPage({ onNavigate, creditCustomer }) {
                 onNavigate={onNavigate} 
                 backTo={editMode ? 'records' : (creditCustomer ? 'credits' : 'home')} 
             />
+
+            {showSupplierModal && (
+                <SupplierModal 
+                    suppliers={suppliers}
+                    onSelect={confirmPrintWithSupplier}
+                    onCancel={() => setShowSupplierModal(false)}
+                />
+            )}
 
             {/* Edit Mode Banner */}
             {editMode && (
