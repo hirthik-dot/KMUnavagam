@@ -832,6 +832,23 @@ function deleteCategory(id) {
 }
 
 
+/**
+ * Backup the database to a specific file path
+ * Uses better-sqlite3's built-in backup method for safety and consistency
+ */
+async function backupDatabase(destinationPath) {
+  try {
+    console.log('📡 Starting database backup to:', destinationPath);
+    // In better-sqlite3, .backup() returns a promise
+    await db.backup(destinationPath);
+    console.log('✅ Backup completed successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Backup failed:', error);
+    throw error;
+  }
+}
+
 // Export all functions so Electron can use them
 module.exports = {
   initializeDatabase,
@@ -865,5 +882,6 @@ module.exports = {
   addCategory,
   updateCategory,
   deleteCategory,
+  backupDatabase, // Add backup function
   db, // Export the database connection for advanced use
 };

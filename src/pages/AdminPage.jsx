@@ -25,7 +25,6 @@ function AdminPage({ onNavigate }) {
         price: '',
         category: 'Breakfast',
         imagePath: '',
-        category: 'Other',
     });
 
     // Load all items when component mounts
@@ -225,7 +224,6 @@ function AdminPage({ onNavigate }) {
                 price: '',
                 category: 'Breakfast',
                 imagePath: '',
-                category: 'Other',
             });
 
             // Reload items
@@ -247,7 +245,6 @@ function AdminPage({ onNavigate }) {
             price: item.price.toString(),
             category: item.category || 'Breakfast',
             imagePath: item.image_path || '',
-            category: item.category || 'Other',
         });
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -264,7 +261,6 @@ function AdminPage({ onNavigate }) {
             price: '',
             category: 'Breakfast',
             imagePath: '',
-            category: 'Other',
         });
     }
 

@@ -127,6 +127,19 @@ function RecordsPage({ onNavigate }) {
         }
     };
 
+    // Handle full data backup
+    const handleBackup = async () => {
+        try {
+            const result = await window.electronAPI.backupDatabase();
+            if (result.success) {
+                setToast({ message: `Backup saved to: ${result.path}`, type: 'success' });
+            }
+        } catch (error) {
+            console.error('Backup failed:', error);
+            setToast({ message: 'Backup failed: ' + error.message, type: 'error' });
+        }
+    };
+
     // Edit and reprint bill - load into billing page
     const handleEditAndReprint = async (bill) => {
         try {
@@ -201,6 +214,9 @@ function RecordsPage({ onNavigate }) {
                 <div className="records-header">
                     <h1 className="records-title"><i className="fa-solid fa-chart-line"></i> Daily Records</h1>
                     <p className="records-subtitle">Sales, Expenses & Profit</p>
+                    <button className="backup-btn" onClick={handleBackup} title="Download full data backup (SQLite format)">
+                        <i className="fa-solid fa-download"></i> Backup Data
+                    </button>
                 </div>
 
                 {/* Filters ... (Keep existing filter buttons) */}

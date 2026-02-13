@@ -51,7 +51,33 @@
 .records-subtitle {
     font-size: 20px;
     color: #6b7280;
-    margin: 0;
+    margin: 0 0 16px 0;
+}
+
+.backup-btn {
+    padding: 12px 24px;
+    background: #10B981;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);
+}
+
+.backup-btn:hover {
+    background: #059669;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(16, 185, 129, 0.3);
+}
+
+.backup-btn i {
+    font-size: 20px;
 }
 
 /* Filters */

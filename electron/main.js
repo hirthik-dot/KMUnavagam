@@ -1,7 +1,7 @@
 // main.js - Main Electron Process
 // This is the entry point for the Electron application
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -549,6 +549,27 @@ function setupIPCHandlers() {
     } catch (error) {
       console.error('Error getting image path:', error);
       return null;
+    }
+  });
+
+  // ========== SYSTEM OPERATIONS ==========
+
+  ipcMain.handle('system:backupDatabase', async () => {
+    try {
+      const { filePath } = await dialog.showSaveDialog({
+        title: 'Backup Database',
+        defaultPath: `hotel_backup_${new Date().toISOString().split('T')[0]}.db`,
+        filters: [{ name: 'SQLite Database', extensions: ['db'] }]
+      });
+
+      if (filePath) {
+        await db.backupDatabase(filePath);
+        return { success: true, path: filePath };
+      }
+      return { success: false };
+    } catch (error) {
+      console.error('Backup IPC Error:', error);
+      throw error;
     }
   });
 }
