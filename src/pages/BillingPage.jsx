@@ -230,18 +230,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
                 </div>
             )}
 
-            {/* Category Tabs */}
-            <div className="category-tabs">
-                {['All', 'Breakfast', 'Lunch', 'Dinner', 'Others'].map(category => (
-                    <button
-                        key={category}
-                        className={`category-tab ${selectedCategory === category ? 'active' : ''}`}
-                        onClick={() => setSelectedCategory(category)}
-                    >
-                        {category}
-                    </button>
-                ))}
-            </div>
+
 
             {/* Search Bar */}
             <div className="search-section">

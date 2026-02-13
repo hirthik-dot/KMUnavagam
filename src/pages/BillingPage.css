@@ -74,51 +74,7 @@
     font-weight: 700;
 }
 
-/* Category Tabs */
-.category-tabs {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 5px;
-    padding: 5px 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-    /* Hide scrollbar for Firefox */
-}
 
-.category-tabs::-webkit-scrollbar {
-    display: none;
-    /* Hide scrollbar for Chrome/Safari */
-}
-
-.category-tab {
-    padding: 12px 24px;
-    background: #f3f4f6;
-    border: 2px solid transparent;
-    border-radius: 30px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #4b5563;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    white-space: nowrap;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-.category-tab:hover {
-    background: #e5e7eb;
-    transform: translateY(-2px);
-}
-
-.category-tab.active {
-    background: #10b981;
-    color: white;
-    border-color: #10b981;
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-}
-
-.category-tab.active:hover {
-    background: #059669;
-}
 
 /* Search Section */
 .search-section {
