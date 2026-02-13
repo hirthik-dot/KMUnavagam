@@ -1,0 +1,40 @@
+/**
+ * PAGE HEADER COMPONENT STYLES
+ * Consistent header styling across all pages
+ */
+
+.page-header {
+    margin-bottom: 32px;
+}
+
+.page-header-back {
+    margin-bottom: 16px;
+}
+
+.page-header-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.page-header-icon {
+    font-size: 48px;
+    line-height: 1;
+}
+
+.page-header-text {
+    flex: 1;
+}
+
+.page-header-title {
+    font-size: 48px;
+    font-weight: 700;
+    color: #1F2937;
+    margin: 0 0 8px 0;
+}
+
+.page-header-subtitle {
+    font-size: 20px;
+    color: #6B7280;
+    margin: 0;
+}

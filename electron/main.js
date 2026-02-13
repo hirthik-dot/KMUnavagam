@@ -5,6 +5,10 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+// Force dd/mm/yyyy date format by setting locale
+app.commandLine.appendSwitch('lang', 'en-GB');
+app.commandLine.appendSwitch('accept-languages', 'en-GB,en,en-IN');
+
 // Import database functions
 const db = require('./database');
 
@@ -62,6 +66,14 @@ function createWindow() {
  */
 app.whenReady().then(() => {
   console.log('🚀 Starting Hotel Billing Application...');
+  
+  // Aggressively force British/Indian English for dd/mm/yyyy date format
+  console.log('🌍 Setting application locale to en-GB');
+  if (typeof app.setLocale === 'function') {
+    app.setLocale('en-GB');
+  } else {
+    console.log('⚠️ app.setLocale is not available, relying on command line switches');
+  }
 
   // Initialize the database
   db.initializeDatabase();
@@ -117,9 +129,9 @@ function setupIPCHandlers() {
   });
 
   // Add new item
-  ipcMain.handle('db:addItem', async (event, nameTamil, nameEnglish, price, imagePath) => {
+  ipcMain.handle('db:addItem', async (event, nameTamil, nameEnglish, price, imagePath, category) => {
     try {
-      return db.addItem(nameTamil, nameEnglish, price, imagePath);
+      return db.addItem(nameTamil, nameEnglish, price, imagePath, category);
     } catch (error) {
       console.error('Error adding item:', error);
       throw error;
@@ -127,9 +139,9 @@ function setupIPCHandlers() {
   });
 
   // Update item
-  ipcMain.handle('db:updateItem', async (event, id, nameTamil, nameEnglish, price, imagePath) => {
+  ipcMain.handle('db:updateItem', async (event, id, nameTamil, nameEnglish, price, imagePath, category) => {
     try {
-      db.updateItem(id, nameTamil, nameEnglish, price, imagePath);
+      db.updateItem(id, nameTamil, nameEnglish, price, imagePath, category);
       return { success: true };
     } catch (error) {
       console.error('Error updating item:', error);
@@ -169,6 +181,16 @@ function setupIPCHandlers() {
     }
   });
 
+  // Update existing bill
+  ipcMain.handle('db:updateBill', async (event, billId, items, totalAmount) => {
+    try {
+      return db.updateBill(billId, items, totalAmount);
+    } catch (error) {
+      console.error('Error updating bill:', error);
+      throw error;
+    }
+  });
+
   // Get bill history
   ipcMain.handle('db:getBillHistory', async (event, limit = 50) => {
     try {
@@ -197,6 +219,46 @@ function setupIPCHandlers() {
       return db.addExpense(description, amount, expenseDate);
     } catch (error) {
       console.error('Error adding expense:', error);
+      throw error;
+    }
+  });
+
+  // Update expense
+  ipcMain.handle('db:updateExpense', async (event, expenseId, description, amount) => {
+    try {
+      return db.updateExpense(expenseId, description, amount);
+    } catch (error) {
+      console.error('Error updating expense:', error);
+      throw error;
+    }
+  });
+
+  // Delete expense
+  ipcMain.handle('db:deleteExpense', async (event, expenseId) => {
+    try {
+      return db.deleteExpense(expenseId);
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      throw error;
+    }
+  });
+
+  // Get today's expenses
+  ipcMain.handle('db:getTodayExpenses', async () => {
+    try {
+      return db.getTodayExpenses();
+    } catch (error) {
+      console.error('Error getting today expenses:', error);
+      throw error;
+    }
+  });
+
+  // Get today's stats (cash sales, credit sales, expenses)
+  ipcMain.handle('db:getTodayStats', async () => {
+    try {
+      return db.getTodayStats();
+    } catch (error) {
+      console.error('Error getting today stats:', error);
       throw error;
     }
   });
@@ -281,6 +343,48 @@ function setupIPCHandlers() {
       return db.addCreditPayment(customerId, amount, date);
     } catch (error) {
       console.error('Error adding credit payment:', error);
+      throw error;
+    }
+  });
+
+  // ========== CATEGORY OPERATIONS ==========
+
+  // Get all categories
+  ipcMain.handle('db:getAllCategories', async () => {
+    try {
+      return db.getAllCategories();
+    } catch (error) {
+      console.error('Error getting categories:', error);
+      throw error;
+    }
+  });
+
+  // Add a new category
+  ipcMain.handle('db:addCategory', async (event, name) => {
+    try {
+      return db.addCategory(name);
+    } catch (error) {
+      console.error('Error adding category:', error);
+      throw error;
+    }
+  });
+
+  // Update category
+  ipcMain.handle('db:updateCategory', async (event, id, name) => {
+    try {
+      return db.updateCategory(id, name);
+    } catch (error) {
+      console.error('Error updating category:', error);
+      throw error;
+    }
+  });
+
+  // Delete category
+  ipcMain.handle('db:deleteCategory', async (event, id) => {
+    try {
+      return db.deleteCategory(id);
+    } catch (error) {
+      console.error('Error deleting category:', error);
       throw error;
     }
   });

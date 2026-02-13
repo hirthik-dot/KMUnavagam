@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import PageHeader from '../components/PageHeader';
+import Footer from '../components/Footer';
+import Toast from '../components/Toast';
 import './CreditDetailsPage.css';
 
 /**
@@ -11,6 +14,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
     const [isLoading, setIsLoading] = useState(true);
     const [showPaymentForm, setShowPaymentForm] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
+    const [toast, setToast] = useState(null);
     const getTodayLocalDate = () => {
         const now = new Date();
         return now.getFullYear() + '-' +
@@ -63,7 +67,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
             loadCustomerDetails();
         } catch (error) {
             console.error('Error adding payment:', error);
-            alert('Failed to save payment');
+            setToast({ message: 'Failed to save payment', type: 'error' });
         }
     };
 
@@ -90,20 +94,14 @@ function CreditDetailsPage({ onNavigate, customerId }) {
 
     return (
         <div className="details-page">
-            {/* Navigation */}
-            <div className="nav-header">
-                <button className="back-btn" onClick={() => onNavigate('credits')}>
-                    ← Back to Credits
-                </button>
-                <span className="debug-id">DEBUG: ID={customer.id} | Bills={customer.bills?.length || 0}</span>
-            </div>
+            <PageHeader onNavigate={onNavigate} backTo="credits" />
 
             <div className="details-container">
                 {/* Info Header */}
                 <div className="customer-info-header">
                     <div>
                         <h1 className="customer-name">{customer.name}</h1>
-                        <p className="customer-phone">📱 {customer.phone || 'No phone provided'}</p>
+                        <p className="customer-phone"><i className="fa-solid fa-mobile-screen-button"></i> {customer.phone || 'No phone provided'}</p>
                     </div>
                     <div className="balance-card">
                         <span className="balance-label">Pending Balance</span>
@@ -119,13 +117,13 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                         className="new-bill-btn"
                         onClick={() => onNavigate('billing', { creditCustomerId: customer.id, customerName: customer.name })}
                     >
-                        ➕ New Bill for this Customer
+                        <i className="fa-solid fa-plus"></i> New Bill for this Customer
                     </button>
                     <button
                         className="payment-btn"
                         onClick={() => setShowPaymentForm(true)}
                     >
-                        💰 Add Payment / Settlement
+                        <i className="fa-solid fa-wallet"></i> Add Payment / Settlement
                     </button>
                 </div>
 
@@ -133,7 +131,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                 <div className="transactions-grid">
                     {/* Bills Column */}
                     <div className="transaction-section">
-                        <h3 className="section-title">📄 Bill History</h3>
+                        <h3 className="section-title"><i className="fa-solid fa-file-invoice"></i> Bill History</h3>
                         {customer.bills.length === 0 ? (
                             <p className="no-data-small">No bills recorded yet.</p>
                         ) : (
@@ -150,7 +148,13 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                     <tbody>
                                         {customer.bills.map((bill) => (
                                             <tr key={bill.id}>
-                                                <td>{new Date(bill.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+                                                <td>{(() => {
+                                                    const d = new Date(bill.date);
+                                                    const day = String(d.getDate()).padStart(2, '0');
+                                                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                                                    const year = d.getFullYear();
+                                                    return `${day}/${month}/${year}`;
+                                                })()}</td>
                                                 <td>#{bill.id}</td>
                                                 <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
                                                 <td>
@@ -166,7 +170,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
 
                     {/* Payments Column */}
                     <div className="transaction-section">
-                        <h3 className="section-title">💸 Payment History</h3>
+                        <h3 className="section-title"><i className="fa-solid fa-money-bill-transfer"></i> Payment History</h3>
                         {customer.payments.length === 0 ? (
                             <p className="no-data-small">No payments recorded yet.</p>
                         ) : (
@@ -181,7 +185,13 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                     <tbody>
                                         {customer.payments.map((p) => (
                                             <tr key={p.id}>
-                                                <td>{new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                <td>{(() => {
+                                                    const d = new Date(p.date);
+                                                    const day = String(d.getDate()).padStart(2, '0');
+                                                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                                                    const year = d.getFullYear();
+                                                    return `${day}/${month}/${year}`;
+                                                })()}</td>
                                                 <td className="paid-amount">₹{p.amount.toFixed(0)}</td>
                                             </tr>
                                         ))}
@@ -234,7 +244,14 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                         <div className="bill-header">
                             <div>
                                 <h2>Bill #{selectedBill.id} Details</h2>
-                                <p>{new Date(selectedBill.created_at).toLocaleString('en-IN')}</p>
+                                <p>{(() => {
+                                    const d = new Date(selectedBill.created_at);
+                                    const day = String(d.getDate()).padStart(2, '0');
+                                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                                    const year = d.getFullYear();
+                                    const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                                    return `${day}/${month}/${year} ${time}`;
+                                })()}</p>
                             </div>
                             <button className="close-btn" onClick={() => setSelectedBill(null)}>✕</button>
                         </div>
@@ -273,6 +290,10 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                     </div>
                 </div>
             )}
+            
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            
+            <Footer />
         </div>
     );
 }

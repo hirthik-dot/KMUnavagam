@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import PageHeader from '../components/PageHeader';
+import Footer from '../components/Footer';
+import Toast from '../components/Toast';
 import './CreditsPage.css';
 
 /**
@@ -11,6 +14,7 @@ function CreditsPage({ onNavigate }) {
     const [showAddForm, setShowAddForm] = useState(false);
     const [newCustomer, setNewCustomer] = useState({ name: '', phone: '' });
     const [isLoading, setIsLoading] = useState(false);
+    const [toast, setToast] = useState(null);
 
     useEffect(() => {
         loadCustomers();
@@ -39,21 +43,18 @@ function CreditsPage({ onNavigate }) {
             loadCustomers();
         } catch (error) {
             console.error('Error adding customer:', error);
-            alert('Failed to add customer');
+            setToast({ message: 'Failed to add customer', type: 'error' });
         }
     };
 
     return (
         <div className="credits-page">
-            {/* Back Button */}
-            <button className="back-btn" onClick={() => onNavigate('home')}>
-                ← Back to Home
-            </button>
+            <PageHeader onNavigate={onNavigate} backTo="home" />
 
             <div className="credits-container">
                 <div className="credits-header">
                     <div>
-                        <h1 className="credits-title">🤝 Credit Customers</h1>
+                        <h1 className="credits-title"><i className="fa-solid fa-handshake"></i> Credit Customers</h1>
                         <p className="credits-subtitle">Track pending balances and payments</p>
                     </div>
                     <button
@@ -137,6 +138,10 @@ function CreditsPage({ onNavigate }) {
                     </div>
                 </div>
             )}
+            
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            
+            <Footer />
         </div>
     );
 }

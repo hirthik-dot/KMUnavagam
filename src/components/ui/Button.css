@@ -1,0 +1,85 @@
+/**
+ * BUTTON COMPONENT STYLES
+ * Large touch-friendly buttons with clear variants
+ */
+
+.ui-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 12px 32px;
+    font-size: 22px;
+    font-weight: 700;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+    white-space: nowrap;
+}
+
+.ui-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* PRIMARY VARIANT - Bright Green */
+.ui-button-primary {
+    background-color: #10B981;
+    color: white;
+    border-color: #10B981;
+}
+
+.ui-button-primary:hover:not(:disabled) {
+    background-color: #059669;
+    border-color: #059669;
+}
+
+.ui-button-primary:active:not(:disabled) {
+    background-color: #047857;
+    border-color: #047857;
+}
+
+/* SECONDARY VARIANT - Outline */
+.ui-button-secondary {
+    background-color: white;
+    color: #1F2937;
+    border-color: #D1D5DB;
+}
+
+.ui-button-secondary:hover:not(:disabled) {
+    background-color: #F9FAFB;
+    border-color: #9CA3AF;
+}
+
+.ui-button-secondary:active:not(:disabled) {
+    background-color: #F3F4F6;
+}
+
+/* DANGER VARIANT - Red */
+.ui-button-danger {
+    background-color: #EF4444;
+    color: white;
+    border-color: #EF4444;
+}
+
+.ui-button-danger:hover:not(:disabled) {
+    background-color: #DC2626;
+    border-color: #DC2626;
+}
+
+.ui-button-danger:active:not(:disabled) {
+    background-color: #B91C1C;
+    border-color: #B91C1C;
+}
+
+/* Icon styling */
+.button-icon {
+    font-size: 24px;
+    line-height: 1;
+}
+
+.button-text {
+    line-height: 1;
+}

@@ -1,4 +1,8 @@
 import { useState, useEffect } from 'react';
+import PageHeader from '../components/PageHeader';
+import Toast from '../components/Toast';
+import ConfirmDialog from '../components/ConfirmDialog';
+import Footer from '../components/Footer';
 import './AdminPage.css';
 
 function AdminPage({ onNavigate }) {
@@ -6,17 +10,27 @@ function AdminPage({ onNavigate }) {
     const [loading, setLoading] = useState(true);
     const [editingItem, setEditingItem] = useState(null);
 
+    const [categories, setCategories] = useState([]);
+    const [editingCategory, setEditingCategory] = useState(null);
+    const [newCategoryName, setNewCategoryName] = useState('');
+
+    const [categoryFilter, setCategoryFilter] = useState('All');
+    const [toast, setToast] = useState(null);
+    const [confirmDialog, setConfirmDialog] = useState(null);
+
     // Form state
     const [formData, setFormData] = useState({
         nameTamil: '',
         nameEnglish: '',
         price: '',
         imagePath: '',
+        category: 'Other',
     });
 
     // Load all items when component mounts
     useEffect(() => {
         loadItems();
+        loadCategories();
     }, []);
 
     /**
@@ -29,10 +43,94 @@ function AdminPage({ onNavigate }) {
             setItems(allItems);
         } catch (error) {
             console.error('Error loading items:', error);
-            alert('Failed to load items. Please restart the app.');
+            showToast('Failed to load items. Please restart the app.', 'error');
         } finally {
             setLoading(false);
         }
+    }
+
+    /**
+     * Show toast notification
+     */
+    function showToast(message, type = 'success') {
+        setToast({ message, type });
+    }
+
+    /**
+     * Load all categories
+     */
+    async function loadCategories() {
+        try {
+            const allCategories = await window.electronAPI.getAllCategories();
+            setCategories(allCategories);
+        } catch (error) {
+            console.error('Error loading categories:', error);
+            showToast('Failed to load categories.', 'error');
+        }
+    }
+
+    /**
+     * Add a new category
+     */
+    async function handleAddCategory() {
+        if (!newCategoryName.trim()) {
+            showToast('Please enter a category name!', 'warning');
+            return;
+        }
+
+        try {
+            await window.electronAPI.addCategory(newCategoryName.trim());
+            setNewCategoryName('');
+            loadCategories();
+            showToast('Category added successfully!');
+        } catch (error) {
+            console.error('Error adding category:', error);
+            showToast('Failed to add category. It may already exist.', 'error');
+        }
+    }
+
+    /**
+     * Update a category name
+     */
+    async function handleUpdateCategory(id, newName) {
+        if (!newName.trim()) {
+            showToast('Category name cannot be empty!', 'warning');
+            return;
+        }
+
+        try {
+            await window.electronAPI.updateCategory(id, newName.trim());
+            setEditingCategory(null);
+            loadCategories();
+            // Reload items to show updated category names
+            loadItems();
+            showToast('Category updated successfully!');
+        } catch (error) {
+            console.error('Error updating category:', error);
+            showToast('Failed to update category. Name may already exist.', 'error');
+        }
+    }
+
+    /**
+     * Delete a category
+     */
+    async function handleDeleteCategory(id, name) {
+        setConfirmDialog({
+            message: `Are you sure you want to delete "${name}"?\n\nAll items in this category will be moved to "Other".`,
+            onConfirm: async () => {
+                setConfirmDialog(null);
+                try {
+                    await window.electronAPI.deleteCategory(id);
+                    loadCategories();
+                    loadItems();
+                    showToast('Category deleted successfully!');
+                } catch (error) {
+                    console.error('Error deleting category:', error);
+                    showToast('Failed to delete category.', 'error');
+                }
+            },
+            onCancel: () => setConfirmDialog(null)
+        });
     }
 
     /**
@@ -72,7 +170,7 @@ function AdminPage({ onNavigate }) {
             reader.readAsDataURL(file);
         } catch (error) {
             console.error('Error uploading image:', error);
-            alert('Failed to upload image. Please try again.');
+            showToast('Failed to upload image. Please try again.', 'error');
         }
     }
 
@@ -84,13 +182,13 @@ function AdminPage({ onNavigate }) {
 
         // Validation
         if (!formData.nameTamil || !formData.nameEnglish || !formData.price) {
-            alert('Please fill in all required fields!');
+            showToast('Please fill in all required fields!', 'warning');
             return;
         }
 
         const price = parseFloat(formData.price);
         if (isNaN(price) || price <= 0) {
-            alert('Please enter a valid price!');
+            showToast('Please enter a valid price!', 'warning');
             return;
         }
 
@@ -102,9 +200,10 @@ function AdminPage({ onNavigate }) {
                     formData.nameTamil,
                     formData.nameEnglish,
                     price,
-                    formData.imagePath || null
+                    formData.imagePath || null,
+                    formData.category
                 );
-                alert('Item updated successfully!');
+                showToast('Item updated successfully!');
                 setEditingItem(null);
             } else {
                 // Add new item
@@ -112,9 +211,10 @@ function AdminPage({ onNavigate }) {
                     formData.nameTamil,
                     formData.nameEnglish,
                     price,
-                    formData.imagePath || null
+                    formData.imagePath || null,
+                    formData.category
                 );
-                alert('Item added successfully!');
+                showToast('Item added successfully!');
             }
 
             // Reset form
@@ -123,13 +223,14 @@ function AdminPage({ onNavigate }) {
                 nameEnglish: '',
                 price: '',
                 imagePath: '',
+                category: 'Other',
             });
 
             // Reload items
             loadItems();
         } catch (error) {
             console.error('Error saving item:', error);
-            alert('Failed to save item. Please try again.');
+            showToast('Failed to save item. Please try again.', 'error');
         }
     }
 
@@ -143,6 +244,7 @@ function AdminPage({ onNavigate }) {
             nameEnglish: item.name_english,
             price: item.price.toString(),
             imagePath: item.image_path || '',
+            category: item.category || 'Other',
         });
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -158,6 +260,7 @@ function AdminPage({ onNavigate }) {
             nameEnglish: '',
             price: '',
             imagePath: '',
+            category: 'Other',
         });
     }
 
@@ -171,7 +274,7 @@ function AdminPage({ onNavigate }) {
             loadItems();
         } catch (error) {
             console.error('Error toggling item status:', error);
-            alert('Failed to update item status.');
+            showToast('Failed to update item status.', 'error');
         }
     }
 
@@ -179,21 +282,27 @@ function AdminPage({ onNavigate }) {
      * Delete an item
      */
     async function handleDelete(item) {
-        const confirmed = confirm(
-            `Are you sure you want to delete "${item.name_english}"?\nThis action cannot be undone.`
-        );
-
-        if (!confirmed) return;
-
-        try {
-            await window.electronAPI.deleteItem(item.id);
-            alert('Item deleted successfully!');
-            loadItems();
-        } catch (error) {
-            console.error('Error deleting item:', error);
-            alert('Failed to delete item.');
-        }
+        setConfirmDialog({
+            message: `Are you sure you want to delete "${item.name_english}"?\nThis action cannot be undone.`,
+            onConfirm: async () => {
+                setConfirmDialog(null);
+                try {
+                    await window.electronAPI.deleteItem(item.id);
+                    showToast('Item deleted successfully!');
+                    loadItems();
+                } catch (error) {
+                    console.error('Error deleting item:', error);
+                    showToast('Failed to delete item.', 'error');
+                }
+            },
+            onCancel: () => setConfirmDialog(null)
+        });
     }
+
+    // Filter items based on category selection
+    const filteredItems = categoryFilter === 'All' 
+        ? items 
+        : items.filter(item => item.category === categoryFilter);
 
     if (loading) {
         return (
@@ -206,15 +315,11 @@ function AdminPage({ onNavigate }) {
 
     return (
         <div className="admin-page">
-            {/* Back Button */}
-            {onNavigate && (
-                <button className="back-btn-admin" onClick={() => onNavigate('home')}>
-                    ← Back to Home
-                </button>
-            )}
+            <PageHeader onNavigate={onNavigate} backTo="home" />
 
-            {/* Add/Edit Form */}
-            <div className="admin-form-section card">
+            <div className="admin-page-content">
+                {/* Add/Edit Form */}
+                <div className="admin-form-section card">
                 <h2 className="section-title">
                     {editingItem ? 'Edit Food Item' : 'Add New Food Item'}
                 </h2>
@@ -262,6 +367,23 @@ function AdminPage({ onNavigate }) {
                     </div>
 
                     <div className="form-group">
+                        <label htmlFor="category">Category *</label>
+                        <select
+                            id="category"
+                            name="category"
+                            value={formData.category}
+                            onChange={handleInputChange}
+                            required
+                        >
+                            {categories.map((cat) => (
+                                <option key={cat.id} value={cat.name}>
+                                    {cat.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="form-group">
                         <label htmlFor="imageUpload">Food Image (Optional)</label>
                         <div className="image-upload-container">
                             <input
@@ -276,7 +398,7 @@ function AdminPage({ onNavigate }) {
                                 className="btn-upload"
                                 onClick={() => document.getElementById('imageUpload').click()}
                             >
-                                📁 Choose Image
+                                <i className="fa-solid fa-folder-open"></i> Choose Image
                             </button>
                             {formData.imagePath && (
                                 <span className="image-selected">✓ Image selected</span>
@@ -297,24 +419,132 @@ function AdminPage({ onNavigate }) {
                                 className="btn-secondary"
                                 onClick={handleCancelEdit}
                             >
-                                ✕ Cancel
+                                <i className="fa-solid fa-xmark"></i> Cancel
                             </button>
                         )}
                     </div>
                 </form>
             </div>
 
+            {/* Category Management Section */}
+            <div className="category-management-section card">
+                <h2 className="section-title">
+                    <i className="fas fa-tags"></i> Manage Categories
+                </h2>
+
+                {/* Add New Category */}
+                <div className="add-category-form">
+                    <input
+                        type="text"
+                        placeholder="New category name..."
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                handleAddCategory();
+                            }
+                        }}
+                    />
+                    <button className="btn-primary" onClick={handleAddCategory}>
+                        <i className="fas fa-plus"></i> Add Category
+                    </button>
+                </div>
+
+                {/* Category List */}
+                <div className="category-list">
+                    {categories.map((category) => (
+                        <div key={category.id} className="category-item">
+                            {editingCategory === category.id ? (
+                                <>
+                                    <input
+                                        type="text"
+                                        defaultValue={category.name}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                handleUpdateCategory(category.id, e.target.value);
+                                            }
+                                            if (e.key === 'Escape') {
+                                                setEditingCategory(null);
+                                            }
+                                        }}
+                                        autoFocus
+                                    />
+                                    <button
+                                        className="btn-success"
+                                        onClick={(e) => {
+                                            const input = e.target.previousSibling;
+                                            handleUpdateCategory(category.id, input.value);
+                                        }}
+                                    >
+                                        <i className="fas fa-check"></i>
+                                    </button>
+                                    <button
+                                        className="btn-secondary"
+                                        onClick={() => setEditingCategory(null)}
+                                    >
+                                        <i className="fas fa-times"></i>
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="category-name">
+                                        <i className="fas fa-tag"></i> {category.name}
+                                    </span>
+                                    <div className="category-actions">
+                                        <button
+                                            className="btn-edit"
+                                            onClick={() => setEditingCategory(category.id)}
+                                        >
+                                            <i className="fas fa-edit"></i>
+                                        </button>
+                                        <button
+                                            className="btn-delete"
+                                            onClick={() => handleDeleteCategory(category.id, category.name)}
+                                        >
+                                            <i className="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
             {/* Existing Items List */}
             <div className="admin-items-section">
-                <h2 className="section-title">Existing Items ({items.length})</h2>
+                <div className="items-header">
+                    <h2 className="section-title">Existing Items ({filteredItems.length})</h2>
+                    
+                    <div className="filter-controls">
+                        <label htmlFor="categoryFilter">Filter by Category:</label>
+                        <select
+                            id="categoryFilter"
+                            value={categoryFilter}
+                            onChange={(e) => setCategoryFilter(e.target.value)}
+                            className="filter-select"
+                        >
+                            <option value="All">All Categories</option>
+                            {categories.map((cat) => (
+                                <option key={cat.id} value={cat.name}>
+                                    {cat.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
 
-                {items.length === 0 ? (
+                {filteredItems.length === 0 ? (
                     <div className="no-items card">
-                        <p>No items found. Add your first item above!</p>
+                        {categoryFilter === 'All' ? (
+                            <p>No items found. Add your first item above!</p>
+                        ) : (
+                            <p>No items found in category "{categoryFilter}".</p>
+                        )}
                     </div>
                 ) : (
                     <div className="items-grid">
-                        {items.map((item) => (
+                        {filteredItems.map((item) => (
                             <div
                                 key={item.id}
                                 className={`item-card card ${!item.is_active ? 'inactive' : ''}`}
@@ -324,6 +554,9 @@ function AdminPage({ onNavigate }) {
                                     <h3 className="item-name-tamil">{item.name_tamil}</h3>
                                     <p className="item-name-english">{item.name_english}</p>
                                     <p className="item-price">₹{item.price.toFixed(2)}</p>
+                                    <p className="item-category">
+                                        <i className="fas fa-tag"></i> {item.category || 'Other'}
+                                    </p>
                                     <p className="item-status">
                                         {item.is_active ? 'Active' : 'Inactive'}
                                     </p>
@@ -335,7 +568,7 @@ function AdminPage({ onNavigate }) {
                                         className="btn-secondary"
                                         onClick={() => handleEdit(item)}
                                     >
-                                        ✏️ Edit
+                                        <i className="fa-solid fa-pen-to-square"></i> Edit
                                     </button>
                                     <button
                                         className={`btn-toggle ${item.is_active ? 'active' : 'inactive'}`}
@@ -355,6 +588,12 @@ function AdminPage({ onNavigate }) {
                     </div>
                 )}
             </div>
+            </div>
+            
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            {confirmDialog && <ConfirmDialog message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} />}
+            
+            <Footer />
         </div>
     );
 }

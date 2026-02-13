@@ -43,9 +43,17 @@ function initializeDatabase() {
       name_english TEXT NOT NULL,
       price REAL NOT NULL,
       image_path TEXT,
+      category TEXT DEFAULT 'Other',
       is_active INTEGER DEFAULT 1
     )
   `);
+
+  // Add category column if it doesn't exist (migration)
+  try {
+    db.exec(`ALTER TABLE items ADD COLUMN category TEXT DEFAULT 'Other'`);
+  } catch (error) {
+    // Column already exists, ignore error
+  }
 
   // Table 2: bills - stores bill information
   db.exec(`
@@ -108,6 +116,26 @@ function initializeDatabase() {
       FOREIGN KEY (customer_id) REFERENCES credit_customers(id)
     )
   `);
+
+  // Table 8: categories - stores food item categories
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Add default categories if table is empty
+  const categoryCount = db.prepare('SELECT COUNT(*) as count FROM categories').get();
+  if (categoryCount.count === 0) {
+    console.log('📝 Adding default categories...');
+    const defaultCategories = ['Tiffin', 'Dosa', 'Parotta', 'Gravy', 'Chinese', 'Other'];
+    const insertCategory = db.prepare('INSERT INTO categories (name) VALUES (?)');
+    for (const cat of defaultCategories) {
+      insertCategory.run(cat);
+    }
+  }
 
   // Add some sample food items if the database is empty
   const count = db.prepare('SELECT COUNT(*) as count FROM items').get();
@@ -173,12 +201,12 @@ function getAllItemsAdmin() {
  * Add a new food item
  * Used by: Admin Page when adding new items
  */
-function addItem(nameTamil, nameEnglish, price, imagePath = null) {
+function addItem(nameTamil, nameEnglish, price, imagePath = null, category = 'Other') {
   const stmt = db.prepare(`
-    INSERT INTO items (name_tamil, name_english, price, image_path, is_active)
-    VALUES (?, ?, ?, ?, 1)
+    INSERT INTO items (name_tamil, name_english, price, image_path, category, is_active)
+    VALUES (?, ?, ?, ?, ?, 1)
   `);
-  const result = stmt.run(nameTamil, nameEnglish, price, imagePath);
+  const result = stmt.run(nameTamil, nameEnglish, price, imagePath, category);
   return result.lastInsertRowid;
 }
 
@@ -186,13 +214,13 @@ function addItem(nameTamil, nameEnglish, price, imagePath = null) {
  * Update an existing food item
  * Used by: Admin Page when editing items
  */
-function updateItem(id, nameTamil, nameEnglish, price, imagePath = null) {
+function updateItem(id, nameTamil, nameEnglish, price, imagePath = null, category = 'Other') {
   const stmt = db.prepare(`
     UPDATE items 
-    SET name_tamil = ?, name_english = ?, price = ?, image_path = ?
+    SET name_tamil = ?, name_english = ?, price = ?, image_path = ?, category = ?
     WHERE id = ?
   `);
-  stmt.run(nameTamil, nameEnglish, price, imagePath, id);
+  stmt.run(nameTamil, nameEnglish, price, imagePath, category, id);
 }
 
 /**
@@ -315,13 +343,68 @@ function getBillItems(billId) {
     SELECT 
       bi.quantity,
       bi.rate,
+      bi.item_id,
+      i.id,
       i.name_tamil,
-      i.name_english
+      i.name_english,
+      i.image_path
     FROM bill_items bi
     JOIN items i ON bi.item_id = i.id
     WHERE bi.bill_id = ?
   `);
   return stmt.all(billId);
+}
+
+/**
+ * Update an existing bill
+ * Used by: Edit & Reprint feature
+ */
+function updateBill(billId, items, totalAmount) {
+  console.log('--- Database: updateBill called ---');
+  console.log('Bill ID:', billId);
+  console.log('Total Amount:', totalAmount);
+  console.log('Items:', items);
+
+  const transaction = db.transaction((billItems) => {
+    // 1. Update bill total
+    const billStmt = db.prepare(`
+      UPDATE bills 
+      SET total_amount = ?
+      WHERE id = ?
+    `);
+    billStmt.run(totalAmount, billId);
+    console.log('Bill total updated');
+
+    // 2. Delete old bill items
+    const deleteStmt = db.prepare(`
+      DELETE FROM bill_items 
+      WHERE bill_id = ?
+    `);
+    deleteStmt.run(billId);
+    console.log('Old bill items deleted');
+
+    // 3. Insert new bill items
+    const itemStmt = db.prepare(`
+      INSERT INTO bill_items (bill_id, item_id, quantity, rate)
+      VALUES (?, ?, ?, ?)
+    `);
+    for (const item of billItems) {
+      const itemId = item.item_id || item.id;
+      itemStmt.run(billId, itemId, item.quantity, item.price);
+    }
+    console.log('New bill items inserted');
+
+    return billId;
+  });
+
+  try {
+    const finalBillId = transaction(items);
+    console.log('Update transaction committed successfully for Bill ID:', finalBillId);
+    return finalBillId;
+  } catch (err) {
+    console.error('UPDATE TRANSACTION FAILED:', err.message);
+    throw err;
+  }
 }
 
 /**
@@ -341,6 +424,80 @@ function addExpense(description, amount, expenseDate = null) {
   `);
   const result = stmt.run(date, description, amount);
   return result.lastInsertRowid;
+}
+
+/**
+ * Update an existing expense
+ */
+function updateExpense(expenseId, description, amount) {
+  const stmt = db.prepare(`
+    UPDATE expenses 
+    SET description = ?, amount = ?
+    WHERE id = ?
+  `);
+  const result = stmt.run(description, amount, expenseId);
+  return result.changes;
+}
+
+/**
+ * Delete an expense
+ */
+function deleteExpense(expenseId) {
+  const stmt = db.prepare(`DELETE FROM expenses WHERE id = ?`);
+  const result = stmt.run(expenseId);
+  return result.changes;
+}
+
+/**
+ * Get today's expenses
+ */
+function getTodayExpenses() {
+  const now = new Date();
+  const today = now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getDate()).padStart(2, '0');
+  
+  const stmt = db.prepare(`
+    SELECT * FROM expenses
+    WHERE expense_date = ?
+    ORDER BY id DESC
+  `);
+  return stmt.all(today);
+}
+
+/**
+ * Get today's summary stats (cash sales, credit sales, expenses)
+ */
+function getTodayStats() {
+  const now = new Date();
+  const today = now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getDate()).padStart(2, '0');
+
+  // Get today's cash and credit sales
+  const salesStmt = db.prepare(`
+    SELECT 
+      COALESCE(SUM(CASE WHEN cb.customer_id IS NULL THEN b.total_amount ELSE 0 END), 0) as cash_sales,
+      COALESCE(SUM(CASE WHEN cb.customer_id IS NOT NULL THEN b.total_amount ELSE 0 END), 0) as credit_sales
+    FROM bills b
+    LEFT JOIN credit_bills cb ON b.id = cb.bill_id
+    WHERE DATE(b.created_at) = ?
+  `);
+  const sales = salesStmt.get(today) || { cash_sales: 0, credit_sales: 0 };
+
+  // Get today's total expenses
+  const expenseStmt = db.prepare(`
+    SELECT COALESCE(SUM(amount), 0) as total_expenses
+    FROM expenses
+    WHERE expense_date = ?
+  `);
+  const expenses = expenseStmt.get(today) || { total_expenses: 0 };
+
+  return {
+    cashSales: sales.cash_sales,
+    creditSales: sales.credit_sales,
+    totalExpenses: expenses.total_expenses
+  };
 }
 
 /**
@@ -439,6 +596,7 @@ function getBillsByDate(date) {
       b.total_amount,
       TIME(b.created_at) as time,
       cc.name as customer_name,
+      cb.customer_id as credit_customer_id,
       CASE WHEN cb.customer_id IS NOT NULL THEN 'CREDIT' ELSE 'CASH' END as bill_type
     FROM bills b
     LEFT JOIN credit_bills cb ON b.id = cb.bill_id
@@ -621,6 +779,57 @@ function getCreditCustomerDetails(customerId) {
   return customer;
 }
 
+// ========================================
+// CATEGORY MANAGEMENT FUNCTIONS
+// ========================================
+
+/**
+ * Get all categories
+ * Used by: Admin Page and Billing Page
+ */
+function getAllCategories() {
+  const stmt = db.prepare('SELECT * FROM categories ORDER BY name ASC');
+  return stmt.all();
+}
+
+/**
+ * Add a new category
+ * Used by: Admin Page
+ */
+function addCategory(name) {
+  const stmt = db.prepare('INSERT INTO categories (name) VALUES (?)');
+  const result = stmt.run(name);
+  return result.lastInsertRowid;
+}
+
+/**
+ * Update a category name
+ * Used by: Admin Page
+ */
+function updateCategory(id, name) {
+  const stmt = db.prepare('UPDATE categories SET name = ? WHERE id = ?');
+  stmt.run(name, id);
+}
+
+/**
+ * Delete a category
+ * Used by: Admin Page
+ * Note: Items with this category will be set to 'Other'
+ */
+function deleteCategory(id) {
+  // First, update all items with this category to 'Other'
+  const updateStmt = db.prepare(`
+    UPDATE items 
+    SET category = 'Other' 
+    WHERE category = (SELECT name FROM categories WHERE id = ?)
+  `);
+  updateStmt.run(id);
+  
+  // Then delete the category
+  const deleteStmt = db.prepare('DELETE FROM categories WHERE id = ?');
+  deleteStmt.run(id);
+}
+
 
 // Export all functions so Electron can use them
 module.exports = {
@@ -632,10 +841,15 @@ module.exports = {
   toggleItemStatus,
   deleteItem,
   saveBill,
+  updateBill,
   getBillHistory,
   getBillItems,
   // New expense functions
   addExpense,
+  updateExpense,
+  deleteExpense,
+  getTodayExpenses,
+  getTodayStats,
   getExpensesByDateRange,
   getDailyRecords,
   getBillsByDate,
@@ -645,5 +859,10 @@ module.exports = {
   addCreditPayment,
   getAllCreditCustomers,
   getCreditCustomerDetails,
+  // Category functions
+  getAllCategories,
+  addCategory,
+  updateCategory,
+  deleteCategory,
   db, // Export the database connection for advanced use
 };
