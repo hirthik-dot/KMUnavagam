@@ -268,15 +268,20 @@ function BillingPage({ onNavigate, creditCustomer }) {
                         </div>
                     ) : (
                         <div className="food-grid">
-                            {filteredItems.map((item) => (
-                                <FoodCard
-                                    key={item.id}
-                                    item={item}
-                                    onAddToCart={addToCart}
-                                    onPriceChange={handlePriceChange}
-                                    isInCart={cart.some((cartItem) => cartItem.id === item.id)}
-                                />
-                            ))}
+                            {filteredItems.map((item) => {
+                                const cartItem = cart.find((ci) => ci.id === item.id);
+                                return (
+                                    <FoodCard
+                                        key={item.id}
+                                        item={item}
+                                        onAddToCart={addToCart}
+                                        onPriceChange={handlePriceChange}
+                                        onUpdateQuantity={updateQuantity}
+                                        isInCart={!!cartItem}
+                                        quantity={cartItem ? cartItem.quantity : 0}
+                                    />
+                                );
+                            })}
                         </div>
                     )}
                 </div>

@@ -138,3 +138,55 @@
     font-weight: 700;
     box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
 }
+
+/* Card Quantity Controls */
+.card-quantity-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 12px;
+    background: #FFFFFF;
+    padding: 8px;
+    border-radius: 8px;
+    border: 2px solid #10B981;
+}
+
+.card-qty-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    border: none;
+    font-size: 24px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.card-qty-btn.decrease {
+    background: #EF4444;
+    color: white;
+}
+
+.card-qty-btn.decrease:hover {
+    background: #DC2626;
+}
+
+.card-qty-btn.increase {
+    background: #10B981;
+    color: white;
+}
+
+.card-qty-btn.increase:hover {
+    background: #059669;
+}
+
+.card-qty-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1F2937;
+    min-width: 30px;
+}

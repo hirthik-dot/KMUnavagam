@@ -154,17 +154,17 @@ function PrintPreviewPage({ onNavigate, billData }) {
                         <table className="bill-table">
                             <thead>
                                 <tr>
-                                    <th>Item</th>
-                                    <th className="right">Qty</th>
-                                    <th className="right">Total</th>
+                                    <th className="col-item">Item</th>
+                                    <th className="right col-qty">Qty</th>
+                                    <th className="right col-total">Total</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {items.map((item, idx) => (
                                     <tr key={idx}>
-                                        <td>{item.name_tamil || item.name_english}</td>
-                                        <td className="right">{item.quantity}</td>
-                                        <td className="right">{(item.price * item.quantity).toFixed(0)}</td>
+                                        <td className="col-item">{item.name_tamil || item.name_english}</td>
+                                        <td className="right col-qty">{item.quantity}</td>
+                                        <td className="right col-total">{(item.price * item.quantity).toFixed(0)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -188,15 +188,15 @@ function PrintPreviewPage({ onNavigate, billData }) {
                         <table className="bill-table">
                             <thead>
                                 <tr>
-                                    <th>ITEM NAME</th>
-                                    <th className="right">QTY</th>
+                                    <th className="col-item">ITEM NAME</th>
+                                    <th className="right col-qty">QTY</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {items.map((item, idx) => (
                                     <tr key={idx}>
-                                        <td className="bold">{item.name_tamil || item.name_english}</td>
-                                        <td className="right bold">{item.quantity}</td>
+                                        <td className="bold col-item">{item.name_tamil || item.name_english}</td>
+                                        <td className="right bold col-qty">{item.quantity}</td>
                                     </tr>
                                 ))}
                             </tbody>

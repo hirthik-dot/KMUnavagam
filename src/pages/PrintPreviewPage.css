@@ -105,14 +105,29 @@
     text-align: left;
     border-bottom: 1px solid #000;
     font-size: 11px;
+    padding: 5px 0;
 }
 
 .bill-table td {
     padding: 5px 0;
 }
 
+/* Base alignment class */
 .right {
-    text-align: right;
+    text-align: right !important;
+}
+
+/* Professional Column Widths */
+.col-item {
+    text-align: left;
+}
+
+.col-qty {
+    width: 60px;
+}
+
+.col-total {
+    width: 80px;
 }
 
 .bill-total-row {

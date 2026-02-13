@@ -141,4 +141,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Delete category
     deleteCategory: (id) =>
         ipcRenderer.invoke('db:deleteCategory', id),
+
+    // ========== SYSTEM ==========
+    backupDatabase: () =>
+        ipcRenderer.invoke('system:backupDatabase'),
 });

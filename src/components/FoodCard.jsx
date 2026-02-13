@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import './FoodCard.css';
 
-function FoodCard({ item, onAddToCart, isInCart, onPriceChange }) {
+function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpdateQuantity }) {
     const [isClicked, setIsClicked] = useState(false);
     const [isEditingPrice, setIsEditingPrice] = useState(false);
     const [tempPrice, setTempPrice] = useState(item.price);
@@ -13,11 +13,31 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange }) {
     function handleClick() {
         if (isEditingPrice) return; // Don't add to cart when editing price
         
+        // If already in cart, don't do anything on card click except if we want it to increment
+        // But the user requested specific buttons, so we should probably keep card click simple
         onAddToCart(item);
 
         // Show click animation
         setIsClicked(true);
         setTimeout(() => setIsClicked(false), 300);
+    }
+
+    /**
+     * Handle quantity increase
+     */
+    function handleIncrement(e) {
+        e.stopPropagation();
+        onUpdateQuantity(item.id, quantity + 1);
+    }
+
+    /**
+     * Handle quantity decrease
+     */
+    function handleDecrement(e) {
+        e.stopPropagation();
+        if (quantity > 0) {
+            onUpdateQuantity(item.id, quantity - 1);
+        }
     }
 
     /**
@@ -118,6 +138,25 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange }) {
                     >
                         ₹{item.price.toFixed(0)}
                     </p>
+                )}
+
+                {/* Quantity Controls - Only when in cart */}
+                {isInCart && (
+                    <div className="card-quantity-controls">
+                        <button 
+                            className="card-qty-btn decrease" 
+                            onClick={handleDecrement}
+                        >
+                            -
+                        </button>
+                        <span className="card-qty-value">{quantity}</span>
+                        <button 
+                            className="card-qty-btn increase" 
+                            onClick={handleIncrement}
+                        >
+                            +
+                        </button>
+                    </div>
                 )}
             </div>
 
