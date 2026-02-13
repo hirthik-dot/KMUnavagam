@@ -42,10 +42,23 @@ function initializeDatabase() {
       name_tamil TEXT NOT NULL,
       name_english TEXT NOT NULL,
       price REAL NOT NULL,
+      category TEXT DEFAULT 'Others',
       image_path TEXT,
       is_active INTEGER DEFAULT 1
     )
   `);
+
+  // Check if category column exists (for existing databases)
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(items)").all();
+    const hasCategory = tableInfo.some(column => column.name === 'category');
+    if (!hasCategory) {
+      console.log('Adding "category" column to "items" table...');
+      db.exec("ALTER TABLE items ADD COLUMN category TEXT DEFAULT 'Others'");
+    }
+  } catch (err) {
+    console.error('Error checking/adding category column:', err.message);
+  }
 
   // Table 2: bills - stores bill information
   db.exec(`
@@ -125,27 +138,27 @@ function initializeDatabase() {
  */
 function addSampleItems() {
   const sampleItems = [
-    { tamil: 'தோசை', english: 'Dosa', price: 40 },
-    { tamil: 'இட்லி', english: 'Idly', price: 30 },
-    { tamil: 'வடை', english: 'Vada', price: 20 },
-    { tamil: 'பூரி', english: 'Poori', price: 35 },
-    { tamil: 'சப்பாத்தி', english: 'Chapathi', price: 35 },
-    { tamil: 'பொங்கல்', english: 'Pongal', price: 45 },
-    { tamil: 'உப்புமா', english: 'Upma', price: 30 },
-    { tamil: 'பரோட்டா', english: 'Parotta', price: 15 },
-    { tamil: 'சாதம்', english: 'Rice', price: 50 },
-    { tamil: 'சாம்பார்', english: 'Sambar', price: 20 },
-    { tamil: 'ரசம்', english: 'Rasam', price: 15 },
-    { tamil: 'தயிர்', english: 'Curd', price: 20 },
+    { tamil: 'தோசை', english: 'Dosa', price: 40, category: 'Breakfast' },
+    { tamil: 'இட்லி', english: 'Idly', price: 30, category: 'Breakfast' },
+    { tamil: 'வடை', english: 'Vada', price: 20, category: 'Breakfast' },
+    { tamil: 'பூரி', english: 'Poori', price: 35, category: 'Breakfast' },
+    { tamil: 'சப்பாத்தி', english: 'Chapathi', price: 35, category: 'Breakfast' },
+    { tamil: 'பொங்கல்', english: 'Pongal', price: 45, category: 'Breakfast' },
+    { tamil: 'உப்புமா', english: 'Upma', price: 30, category: 'Breakfast' },
+    { tamil: 'பரோட்டா', english: 'Parotta', price: 15, category: 'Dinner' },
+    { tamil: 'சாதம்', english: 'Rice', price: 50, category: 'Lunch' },
+    { tamil: 'சாம்பார்', english: 'Sambar', price: 20, category: 'Lunch' },
+    { tamil: 'ரசம்', english: 'Rasam', price: 15, category: 'Lunch' },
+    { tamil: 'தயிர்', english: 'Curd', price: 20, category: 'Lunch' },
   ];
 
   const insert = db.prepare(`
-    INSERT INTO items (name_tamil, name_english, price, is_active)
-    VALUES (?, ?, ?, 1)
+    INSERT INTO items (name_tamil, name_english, price, category, is_active)
+    VALUES (?, ?, ?, ?, 1)
   `);
 
   for (const item of sampleItems) {
-    insert.run(item.tamil, item.english, item.price);
+    insert.run(item.tamil, item.english, item.price, item.category);
   }
 }
 
@@ -173,12 +186,12 @@ function getAllItemsAdmin() {
  * Add a new food item
  * Used by: Admin Page when adding new items
  */
-function addItem(nameTamil, nameEnglish, price, imagePath = null) {
+function addItem(nameTamil, nameEnglish, price, category, imagePath = null) {
   const stmt = db.prepare(`
-    INSERT INTO items (name_tamil, name_english, price, image_path, is_active)
-    VALUES (?, ?, ?, ?, 1)
+    INSERT INTO items (name_tamil, name_english, price, category, image_path, is_active)
+    VALUES (?, ?, ?, ?, ?, 1)
   `);
-  const result = stmt.run(nameTamil, nameEnglish, price, imagePath);
+  const result = stmt.run(nameTamil, nameEnglish, price, category, imagePath);
   return result.lastInsertRowid;
 }
 
@@ -186,13 +199,13 @@ function addItem(nameTamil, nameEnglish, price, imagePath = null) {
  * Update an existing food item
  * Used by: Admin Page when editing items
  */
-function updateItem(id, nameTamil, nameEnglish, price, imagePath = null) {
+function updateItem(id, nameTamil, nameEnglish, price, category, imagePath = null) {
   const stmt = db.prepare(`
     UPDATE items 
-    SET name_tamil = ?, name_english = ?, price = ?, image_path = ?
+    SET name_tamil = ?, name_english = ?, price = ?, category = ?, image_path = ?
     WHERE id = ?
   `);
-  stmt.run(nameTamil, nameEnglish, price, imagePath, id);
+  stmt.run(nameTamil, nameEnglish, price, category, imagePath, id);
 }
 
 /**

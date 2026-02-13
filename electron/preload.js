@@ -15,12 +15,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAllItemsAdmin: () => ipcRenderer.invoke('db:getAllItemsAdmin'),
 
     // Add a new food item
-    addItem: (nameTamil, nameEnglish, price, imagePath) =>
-        ipcRenderer.invoke('db:addItem', nameTamil, nameEnglish, price, imagePath),
+    addItem: (nameTamil, nameEnglish, price, category, imagePath) =>
+        ipcRenderer.invoke('db:addItem', nameTamil, nameEnglish, price, category, imagePath),
 
     // Update an existing food item
-    updateItem: (id, nameTamil, nameEnglish, price, imagePath) =>
-        ipcRenderer.invoke('db:updateItem', id, nameTamil, nameEnglish, price, imagePath),
+    updateItem: (id, nameTamil, nameEnglish, price, category, imagePath) =>
+        ipcRenderer.invoke('db:updateItem', id, nameTamil, nameEnglish, price, category, imagePath),
 
     // Toggle item active status (enable/disable)
     toggleItemStatus: (id, isActive) =>

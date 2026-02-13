@@ -117,9 +117,9 @@ function setupIPCHandlers() {
   });
 
   // Add new item
-  ipcMain.handle('db:addItem', async (event, nameTamil, nameEnglish, price, imagePath) => {
+  ipcMain.handle('db:addItem', async (event, nameTamil, nameEnglish, price, category, imagePath) => {
     try {
-      return db.addItem(nameTamil, nameEnglish, price, imagePath);
+      return db.addItem(nameTamil, nameEnglish, price, category, imagePath);
     } catch (error) {
       console.error('Error adding item:', error);
       throw error;
@@ -127,9 +127,9 @@ function setupIPCHandlers() {
   });
 
   // Update item
-  ipcMain.handle('db:updateItem', async (event, id, nameTamil, nameEnglish, price, imagePath) => {
+  ipcMain.handle('db:updateItem', async (event, id, nameTamil, nameEnglish, price, category, imagePath) => {
     try {
-      db.updateItem(id, nameTamil, nameEnglish, price, imagePath);
+      db.updateItem(id, nameTamil, nameEnglish, price, category, imagePath);
       return { success: true };
     } catch (error) {
       console.error('Error updating item:', error);
@@ -307,28 +307,66 @@ function setupIPCHandlers() {
 
     return new Promise((resolve, reject) => {
       const silentWin = new BrowserWindow({
-        show: false, // Hidden window
-        webPreferences: { nodeIntegration: true, contextIsolation: false }
+        show: false,
+        focusable: true, // Needs to be focusable to handle print events correctly in some versions
+        skipTaskbar: true,
+        webPreferences: {
+          nodeIntegration: true,
+          contextIsolation: false
+        }
       });
 
       const html = type === 'KOT' ? generateKOTHTML(billData) : generateBillHTML(billData);
       silentWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 
       silentWin.webContents.on('did-finish-load', () => {
-        silentWin.webContents.print({
-          silent: true,
-          printBackground: true,
-          deviceName: '' // Uses system default printer
-        }, (success, errorType) => {
-          if (!success) {
-            console.error('Print failed:', errorType);
-            reject(new Error(errorType));
-          } else {
-            console.log('Print successful');
-            resolve(true);
-          }
-          silentWin.close();
-        });
+        // Small delay to ensure content is ready
+        setTimeout(() => {
+          silentWin.webContents.print({
+            silent: true,
+            printBackground: true,
+            deviceName: ''
+          }, (success, errorType) => {
+            // Cleanup the print window
+            if (silentWin && !silentWin.isDestroyed()) {
+              silentWin.destroy();
+            }
+
+            // FORCED RE-ACTIVATION OF MAIN WINDOW
+            if (mainWindow) {
+              // This sequence is the "nuclear option" for restoring focus on Windows
+              mainWindow.setEnabled(true);
+              mainWindow.setIgnoreMouseEvents(false);
+
+              if (mainWindow.isMinimized()) mainWindow.restore();
+
+              mainWindow.show(); // Activates the window
+              mainWindow.focus(); // Focuses the window
+
+              // Force focus into the web view
+              setTimeout(() => {
+                if (mainWindow) {
+                  mainWindow.webContents.focus();
+                  // Notify the renderer that printing is done and UI should be live
+                  mainWindow.webContents.send('print-finished');
+                }
+              }, 150);
+            }
+
+            if (!success) {
+              console.error('Print failed:', errorType);
+              reject(new Error(errorType));
+            } else {
+              console.log('Print successful');
+              resolve(true);
+            }
+          });
+        }, 500);
+      });
+
+      silentWin.on('unresponsive', () => {
+        if (!silentWin.isDestroyed()) silentWin.destroy();
+        reject(new Error('Print window became unresponsive'));
       });
     });
   });
@@ -400,173 +438,295 @@ function generateBillHTML(billData) {
     <html>
     <head>
       <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
+        /* ========== RESET ========== */
         * {
           margin: 0;
           padding: 0;
           box-sizing: border-box;
         }
         
+        /* ========== BODY - 58MM THERMAL PRINTER ========== */
         body {
+          width: 257px;
+          max-width: 257px;
+          margin: 0;
+          padding: 2px;
+          
+          /* Arial is DARKER on thermal printers */
           font-family: Arial, sans-serif;
-          width: 80mm;
-          padding: 8px;
           font-size: 11px;
-          line-height: 1.3;
+          line-height: 1.2;
+          font-weight: 600;
+          
+          color: #000;
+          background: #fff;
+          
+          /* Prevent text overflow */
+          overflow-wrap: break-word;
+          word-wrap: break-word;
+          word-break: break-word;
         }
         
+        /* ========== @MEDIA PRINT - CRITICAL ========== */
+        @media print {
+          @page {
+            /* Remove all browser default margins */
+            margin: 0;
+            padding: 0;
+            size: 58mm auto;
+          }
+          
+          body {
+            margin: 0;
+            padding: 2px;
+            width: 257px;
+            max-width: 257px;
+            -webkit-print-color-adjust: exact; /* Force dark colors */
+            print-color-adjust: exact;
+            color-adjust: exact;
+          }
+          
+          /* Prevent page breaks inside elements */
+          .header, .bill-info, .table, .summary, .total-section, .payment-info, .footer {
+            page-break-inside: avoid;
+          }
+          
+          /* Force maximum darkness on print */
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
+        }
+        
+        /* ========== UTILITY CLASSES ========== */
         .center {
           text-align: center;
         }
         
         .bold {
-          font-weight: bold;
+          font-weight: 700;
         }
         
+        .divider {
+          border-top: 2px dashed #000;
+          margin: 3px 0;
+        }
+        
+        /* ========== HEADER ========== */
         .header {
-          margin-bottom: 8px;
+          margin-bottom: 3px;
           text-align: center;
         }
         
         .hotel-name {
-          font-size: 16px;
-          font-weight: bold;
-          margin-bottom: 4px;
+          font-size: 26px;
+          font-weight: 700;
+          margin-bottom: 2px;
         }
         
         .header-info {
-          font-size: 9px;
-          line-height: 1.4;
-          margin-bottom: 2px;
+          font-size: 13px;
+          line-height: 1.2;
+          margin-bottom: 1px;
+          font-weight: 700;
         }
         
-        .divider {
-          border-top: 1px solid #000;
-          margin: 6px 0;
-        }
-        
+        /* ========== BILL INFO ========== */
         .bill-info {
-          margin-bottom: 6px;
+          margin-bottom: 3px;
           font-size: 10px;
+          font-weight: 600;
         }
         
-        .bill-info-row {
-          display: flex;
-          justify-content: space-between;
+        .bill-info-line {
           margin-bottom: 2px;
         }
         
+        /* ========== TABLE - MAXIMUM WIDTH ========== */
         .table {
           width: 100%;
+          max-width: 253px;
           border-collapse: collapse;
-          margin: 8px 0;
+          margin: 3px 0;
+          table-layout: fixed; /* CRITICAL: Prevents column overflow */
         }
         
         .table th {
-          border-bottom: 1px solid #000;
-          padding: 4px 2px;
-          text-align: left;
+          border-bottom: 2px solid #000;
+          padding: 3px 2px;
           font-size: 10px;
-          font-weight: bold;
+          font-weight: 700;
         }
         
         .table td {
-          padding: 3px 2px;
+          padding: 4px 2px;
           font-size: 10px;
+          font-weight: 600;
+          vertical-align: top;
+        }
+        
+        .table th.item,
+        .table td.item {
+          width: 133px;
+          text-align: left;
+          overflow-wrap: break-word;
+          word-wrap: break-word;
         }
         
         .table th.qty,
-        .table td.qty,
+        .table td.qty {
+          width: 40px;
+          text-align: center;
+          font-weight: 700;
+        }
+        
         .table th.rate,
-        .table td.rate,
+        .table td.rate {
+          width: 40px;
+          text-align: right;
+          font-weight: 700;
+        }
+        
         .table th.total,
         .table td.total {
+          width: 40px;
           text-align: right;
-          width: 50px;
+          font-weight: 700;
         }
+        
+        /* Total: 133 + 40 + 40 + 40 = 253px */
         
         .summary {
-          margin-top: 8px;
+          margin-top: 3px;
           font-size: 10px;
+          font-weight: 600;
         }
         
-        .summary-row {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 3px;
+        .summary-line {
+          margin-bottom: 2px;
+          font-weight: 700;
         }
         
-        .total-section {
-          border-top: 1px solid #000;
-          border-bottom: 1px solid #000;
-          padding: 6px 0;
-          margin: 8px 0;
-        }
-        
-        .total-row {
-          display: flex;
-          justify-content: space-between;
-          font-size: 14px;
-          font-weight: bold;
-        }
-        
-        .payment-info {
-          margin: 8px 0;
-          font-size: 10px;
-        }
-        
-        .payment-row {
-          display: flex;
-          justify-content: space-between;
+        .summary-line-flex {
+          display: block;
           margin-bottom: 2px;
         }
         
+        .summary-line-flex::after {
+          content: "";
+          display: table;
+          clear: both;
+        }
+        
+        .summary-line-flex .left {
+          float: left;
+          font-weight: 700;
+        }
+        
+        .summary-line-flex .right {
+          float: right;
+          font-weight: 700;
+        }
+        
+        .total-section {
+          border-top: 2px solid #000;
+          border-bottom: 2px solid #000;
+          padding: 4px 0;
+          margin: 3px 0;
+        }
+        
+        .total-row {
+          font-size: 14px;
+          font-weight: 700;
+        }
+        
+        .total-row::after {
+          content: "";
+          display: table;
+          clear: both;
+        }
+        
+        .total-row .left {
+          float: left;
+        }
+        
+        .total-row .right {
+          float: right;
+        }
+        
+        .payment-info {
+          margin: 3px 0;
+          font-size: 10px;
+          font-weight: 600;
+        }
+        
+        .payment-line {
+          margin-bottom: 2px;
+        }
+        
+        .payment-line::after {
+          content: "";
+          display: table;
+          clear: both;
+        }
+        
+        .payment-line .left {
+          float: left;
+          font-weight: 700;
+        }
+        
+        .payment-line .right {
+          float: right;
+          font-weight: 700;
+        }
+        
         .footer {
-          margin-top: 10px;
+          margin-top: 5px;
           text-align: center;
           font-size: 10px;
         }
       </style>
     </head>
     <body>
+      <!-- HEADER -->
       <div class="header">
         <div class="hotel-name">${hotelName || 'KM Unavagam'}</div>
         <div class="header-info">${address || 'Bodipalaiyam Main Road, Malumichampatti, Coimbatore, TAMIL NADU, 641050'}</div>
-        <div class="header-info">FSSAI Number: ${fssai || '12425003003008'}</div>
-        ${license ? `<div class="header-info">LICENSE Number: ${license}</div>` : ''}
-        ${phone ? `<div class="header-info">Phone Number: ${phone}</div>` : ''}
-        ${email ? `<div class="header-info">@ ${email}</div>` : ''}
+        <div class="header-info">FSSAI: ${fssai || '12425003003008'}</div>
+        <div class="header-info">GPay: 7867853371 / Ph: +91 6381591518</div>
+        ${license ? `<div class="header-info">LIC: ${license}</div>` : ''}
+        ${phone ? `<div class="header-info">Ph: ${phone}</div>` : ''}
+        ${email ? `<div class="header-info">${email}</div>` : ''}
       </div>
       
       <div class="divider"></div>
       
+      <!-- BILL INFO -->
       <div class="bill-info">
-        <div class="bill-info-row">
-          <span>Bill No: ${billNumber}</span>
-        </div>
-        <div class="bill-info-row">
-          <span>Created: ${dateTime}</span>
-        </div>
-        <div class="bill-info-row">
-          <span>Bill To: ${billData.customerName || 'Cash Sale'}</span>
-        </div>
+        <div class="bill-info-line">Bill No: ${billNumber}</div>
+        <div class="bill-info-line">Date: ${dateTime}</div>
+        <div class="bill-info-line">To: ${billData.customerName || 'Cash Sale'}</div>
       </div>
       
       <div class="divider"></div>
       
+      <!-- ITEMS TABLE -->
       <table class="table">
         <thead>
           <tr>
-            <th>Item Name</th>
+            <th class="item">Item</th>
             <th class="qty">Qty</th>
             <th class="rate">Rate</th>
-            <th class="total">Total</th>
+            <th class="total">Amt</th>
           </tr>
         </thead>
         <tbody>
           ${items.map(item => `
             <tr>
-              <td>${item.name_tamil || item.name_english}</td>
+              <td class="item">${item.name_tamil || item.name_english}</td>
               <td class="qty">${item.quantity}</td>
               <td class="rate">${item.price.toFixed(0)}</td>
               <td class="total">${(item.price * item.quantity).toFixed(0)}</td>
@@ -575,45 +735,48 @@ function generateBillHTML(billData) {
         </tbody>
       </table>
       
+      <div class="divider"></div>
+      
+      <!-- SUMMARY -->
       <div class="summary">
-        <div class="summary-row">
-          <span>Total Items: ${items.length}</span>
-        </div>
-        <div class="summary-row">
-          <span>Total Quantity: ${totalQuantity}</span>
-        </div>
-        <div class="summary-row">
-          <span>Sub Total</span>
-          <span>${total.toFixed(0)}</span>
+        <div class="summary-line">Items: ${items.length} | Qty: ${totalQuantity}</div>
+        <div class="summary-line-flex">
+          <span class="left">Sub Total</span>
+          <span class="right">${total.toFixed(0)}</span>
         </div>
       </div>
       
+      <!-- TOTAL -->
       <div class="total-section">
         <div class="total-row">
-          <span>Total</span>
-          <span>${total.toFixed(0)}</span>
+          <span class="left">TOTAL</span>
+          <span class="right">₹${total.toFixed(0)}</span>
         </div>
       </div>
       
+      <!-- PAYMENT INFO -->
       <div class="payment-info">
-        <div class="payment-row">
-          <span>Mode of Payment</span>
-          <span>${billData.customerName ? 'CREDIT' : 'CASH'}</span>
+        <div class="payment-line">
+          <span class="left">Payment</span>
+          <span class="right">${billData.customerName ? 'CREDIT' : 'CASH'}</span>
         </div>
-        <div class="payment-row">
-          <span>Amount Paid</span>
-          <span>${billData.customerName ? '0' : total.toFixed(0)}</span>
+        <div class="payment-line">
+          <span class="left">Paid</span>
+          <span class="right">${billData.customerName ? '0' : total.toFixed(0)}</span>
         </div>
-        <div class="payment-row">
-          <span>Pending Bal</span>
-          <span>${billData.customerName ? total.toFixed(0) : '0'}</span>
+        <div class="payment-line">
+          <span class="left">Balance</span>
+          <span class="right">${billData.customerName ? total.toFixed(0) : '0'}</span>
         </div>
       </div>
       
       <div class="divider"></div>
       
+      <!-- FOOTER -->
       <div class="footer">
         <div class="bold">Thank You! Visit Again!</div>
+        <div style="font-size: 8px; margin-top: 3px;">Software by LancingHub</div>
+        <div style="font-size: 8px;">Contact: +91 9952652246 / +91 9514001712</div>
       </div>
     </body>
     </html>
@@ -631,39 +794,154 @@ function generateKOTHTML(billData) {
     <html>
     <head>
       <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body {
-          font-family: 'Courier New', Courier, monospace;
-          width: 80mm;
-          padding: 10px;
+        /* ========== RESET ========== */
+        * {
           margin: 0;
+          padding: 0;
+          box-sizing: border-box;
         }
-        .center { text-align: center; }
-        .bold { font-weight: bold; }
-        .kot-title { font-size: 24px; border-bottom: 2px solid black; margin-bottom: 10px; }
-        .kot-date { font-size: 12px; margin-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { text-align: left; border-bottom: 1px solid black; font-size: 14px; }
-        td { padding: 8px 0; font-size: 18px; font-weight: bold; }
-        .qty { text-align: right; }
-        .footer { margin-top: 20px; border-top: 1px dashed black; padding-top: 10px; font-size: 14px; }
+        
+        /* ========== BODY - 58MM THERMAL PRINTER ========== */
+        body {
+          width: 230px;
+          max-width: 230px;
+          margin: 0;
+          padding: 2px;
+          
+          /* Arial is DARKER than Courier */
+          font-family: Arial, sans-serif;
+          font-size: 12px;
+          line-height: 1.2;
+          font-weight: 700;
+          
+          color: #000;
+          background: #fff;
+          
+          overflow-wrap: break-word;
+          word-wrap: break-word;
+          word-break: break-word;
+        }
+        
+        /* ========== @MEDIA PRINT ========== */
+        @media print {
+          @page {
+            margin: 0;
+            padding: 0;
+            size: 58mm auto;
+          }
+          
+          body {
+            margin: 0;
+            padding: 2px;
+            width: 257px;
+            max-width: 257px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            color-adjust: exact;
+          }
+          
+          /* Force maximum darkness */
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
+        }
+        
+        .center {
+          text-align: center;
+        }
+        
+        .bold {
+          font-weight: 700;
+        }
+        
+        .kot-title {
+          font-size: 20px;
+          font-weight: 700;
+          border-bottom: 2px solid #000;
+          margin-bottom: 5px;
+          padding-bottom: 4px;
+        }
+        
+        .kot-date {
+          font-size: 11px;
+          margin-bottom: 5px;
+          font-weight: 700;
+        }
+        
+        .divider {
+          border-top: 2px dashed #000;
+          margin: 5px 0;
+        }
+        
+        /* ========== TABLE - MAXIMUM WIDTH ========== */
+        table {
+          width: 100%;
+          max-width: 253px;
+          border-collapse: collapse;
+          margin-top: 5px;
+          table-layout: fixed;
+        }
+        
+        th {
+          text-align: left;
+          border-bottom: 2px solid #000;
+          font-size: 12px;
+          font-weight: 700;
+          padding: 4px 2px;
+        }
+        
+        td {
+          padding: 7px 2px;
+          font-size: 14px;
+          font-weight: 700;
+          vertical-align: top;
+        }
+        
+        th.item,
+        td.item {
+          width: 171px;
+          text-align: left;
+          overflow-wrap: break-word;
+          word-wrap: break-word;
+        }
+        
+        th.qty,
+        td.qty {
+          width: 82px;
+          text-align: center;
+          font-weight: 700;
+        }
+        
+        .footer {
+          margin-top: 10px;
+          border-top: 2px solid #000;
+          padding-top: 5px;
+          font-size: 12px;
+          font-weight: 700;
+        }
       </style>
     </head>
     <body>
       <div class="center bold kot-title">KOT - PARCEL</div>
       <div class="center kot-date">Date: ${dateTime}</div>
       
+      <div class="divider"></div>
+      
       <table>
         <thead>
           <tr>
-            <th>ITEM NAME</th>
+            <th class="item">ITEM NAME</th>
             <th class="qty">QTY</th>
           </tr>
         </thead>
         <tbody>
           ${items.map(item => `
             <tr>
-              <td>${item.name_tamil || item.name_english}</td>
+              <td class="item">${item.name_tamil || item.name_english}</td>
               <td class="qty">${item.quantity}</td>
             </tr>
           `).join('')}

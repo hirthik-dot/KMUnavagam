@@ -61,6 +61,23 @@
     font-style: italic;
 }
 
+.form-group select {
+    width: 100%;
+    padding: 1rem;
+    font-size: 1.25rem;
+    border: 2px solid #E5E7EB;
+    border-radius: 8px;
+    background-color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.form-group select:focus {
+    outline: none;
+    border-color: #10B981;
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+}
+
 .form-actions {
     display: flex;
     gap: 1rem;
@@ -144,6 +161,16 @@
     font-size: 1.25rem;
     color: #6B7280;
     margin-bottom: 0.5rem;
+}
+
+.item-category {
+    font-size: 1.1rem;
+    color: #374151;
+    margin-bottom: 0.5rem;
+}
+
+.item-category strong {
+    color: #10B981;
 }
 
 .item-price {

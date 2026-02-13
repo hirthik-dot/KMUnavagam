@@ -42,9 +42,10 @@ function PrintPreviewPage({ onNavigate, billData }) {
             // 3. Print silently
             await window.electronAPI.printSilent(finalBillData, 'BILL');
 
-            // 4. Navigate back
-            alert('Bill Printed Successfully!');
-            onNavigate(billData.creditCustomerId ? 'credits' : 'billing');
+            // 4. Navigate back with a larger delay to allow Electron focus sequence to complete
+            setTimeout(() => {
+                onNavigate(billData.creditCustomerId ? 'credits' : 'billing');
+            }, 500);
         } catch (error) {
             console.error('Print Error:', error);
             alert('Printing Failed: ' + error.message);
@@ -78,8 +79,10 @@ function PrintPreviewPage({ onNavigate, billData }) {
             // 4. Print Bill silently
             await window.electronAPI.printSilent(finalBillData, 'BILL');
 
-            alert('KOT & Bill Printed Successfully!');
-            onNavigate(billData.creditCustomerId ? 'credits' : 'billing');
+            // Navigate back with a larger delay to allow Electron focus sequence to complete
+            setTimeout(() => {
+                onNavigate(billData.creditCustomerId ? 'credits' : 'billing');
+            }, 500);
         } catch (error) {
             console.error('Print Error:', error);
             alert('Printing Failed: ' + error.message);

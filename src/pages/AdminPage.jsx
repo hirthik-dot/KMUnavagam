@@ -11,6 +11,7 @@ function AdminPage({ onNavigate }) {
         nameTamil: '',
         nameEnglish: '',
         price: '',
+        category: 'Breakfast',
         imagePath: '',
     });
 
@@ -102,6 +103,7 @@ function AdminPage({ onNavigate }) {
                     formData.nameTamil,
                     formData.nameEnglish,
                     price,
+                    formData.category,
                     formData.imagePath || null
                 );
                 alert('Item updated successfully!');
@@ -112,6 +114,7 @@ function AdminPage({ onNavigate }) {
                     formData.nameTamil,
                     formData.nameEnglish,
                     price,
+                    formData.category,
                     formData.imagePath || null
                 );
                 alert('Item added successfully!');
@@ -122,6 +125,7 @@ function AdminPage({ onNavigate }) {
                 nameTamil: '',
                 nameEnglish: '',
                 price: '',
+                category: 'Breakfast',
                 imagePath: '',
             });
 
@@ -142,6 +146,7 @@ function AdminPage({ onNavigate }) {
             nameTamil: item.name_tamil,
             nameEnglish: item.name_english,
             price: item.price.toString(),
+            category: item.category || 'Breakfast',
             imagePath: item.image_path || '',
         });
         // Scroll to top
@@ -157,6 +162,7 @@ function AdminPage({ onNavigate }) {
             nameTamil: '',
             nameEnglish: '',
             price: '',
+            category: 'Breakfast',
             imagePath: '',
         });
     }
@@ -262,6 +268,22 @@ function AdminPage({ onNavigate }) {
                     </div>
 
                     <div className="form-group">
+                        <label htmlFor="category">Category *</label>
+                        <select
+                            id="category"
+                            name="category"
+                            value={formData.category}
+                            onChange={handleInputChange}
+                            required
+                        >
+                            <option value="Breakfast">Breakfast</option>
+                            <option value="Lunch">Lunch</option>
+                            <option value="Dinner">Dinner</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+
+                    <div className="form-group">
                         <label htmlFor="imageUpload">Food Image (Optional)</label>
                         <div className="image-upload-container">
                             <input
@@ -323,6 +345,7 @@ function AdminPage({ onNavigate }) {
                                 <div className="item-info">
                                     <h3 className="item-name-tamil">{item.name_tamil}</h3>
                                     <p className="item-name-english">{item.name_english}</p>
+                                    <p className="item-category">Category: <strong>{item.category}</strong></p>
                                     <p className="item-price">₹{item.price.toFixed(2)}</p>
                                     <p className="item-status">
                                         {item.is_active ? 'Active' : 'Inactive'}

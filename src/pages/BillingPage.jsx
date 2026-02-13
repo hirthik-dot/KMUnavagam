@@ -9,6 +9,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
     const [filteredItems, setFilteredItems] = useState([]);
     const [cart, setCart] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('All');
     const [loading, setLoading] = useState(true);
 
     // Load food items when component mounts
@@ -16,20 +17,27 @@ function BillingPage({ onNavigate, creditCustomer }) {
         loadFoodItems();
     }, []);
 
-    // Filter items when search query changes
+    // Filter items when search query or category changes
     useEffect(() => {
-        if (searchQuery.trim() === '') {
-            setFilteredItems(foodItems);
-        } else {
+        let filtered = foodItems;
+
+        // Filter by category
+        if (selectedCategory !== 'All') {
+            filtered = filtered.filter(item => item.category === selectedCategory);
+        }
+
+        // Filter by search query
+        if (searchQuery.trim() !== '') {
             const query = searchQuery.toLowerCase();
-            const filtered = foodItems.filter(
+            filtered = filtered.filter(
                 (item) =>
                     item.name_english.toLowerCase().includes(query) ||
                     item.name_tamil.includes(query)
             );
-            setFilteredItems(filtered);
         }
-    }, [searchQuery, foodItems]);
+
+        setFilteredItems(filtered);
+    }, [searchQuery, foodItems, selectedCategory]);
 
     /**
      * Load all food items from the database
@@ -162,6 +170,19 @@ function BillingPage({ onNavigate, creditCustomer }) {
                     <p>📝 Billing for Credit Customer: <strong>{creditCustomer.customerName}</strong></p>
                 </div>
             )}
+
+            {/* Category Tabs */}
+            <div className="category-tabs">
+                {['All', 'Breakfast', 'Lunch', 'Dinner', 'Others'].map(category => (
+                    <button
+                        key={category}
+                        className={`category-tab ${selectedCategory === category ? 'active' : ''}`}
+                        onClick={() => setSelectedCategory(category)}
+                    >
+                        {category}
+                    </button>
+                ))}
+            </div>
 
             {/* Search Bar */}
             <div className="search-section">
