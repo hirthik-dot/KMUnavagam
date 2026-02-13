@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import FoodCard from '../components/FoodCard';
 import Cart from '../components/Cart';
 import SearchBar from '../components/SearchBar';
+import PageHeader from '../components/PageHeader';
+import Toast from '../components/Toast';
 import './BillingPage.css';
 
 function BillingPage({ onNavigate, creditCustomer }) {
@@ -11,11 +13,26 @@ function BillingPage({ onNavigate, creditCustomer }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [loading, setLoading] = useState(true);
+    const [editMode, setEditMode] = useState(false);
+    const [originalBillId, setOriginalBillId] = useState(null);
 
-    // Load food items when component mounts
+    const [categories, setCategories] = useState([{ id: 0, name: 'All' }]);
+    const [toast, setToast] = useState(null);
+
+    // Load food items and categories when component mounts
     useEffect(() => {
         loadFoodItems();
+        loadCategories();
     }, []);
+
+    // Pre-fill cart if editing mode
+    useEffect(() => {
+        if (creditCustomer?.editMode && creditCustomer?.cart) {
+            setCart(creditCustomer.cart);
+            setEditMode(true);
+            setOriginalBillId(creditCustomer.originalBillId);
+        }
+    }, [creditCustomer]);
 
     // Filter items when search query or category changes
     useEffect(() => {
@@ -23,7 +40,9 @@ function BillingPage({ onNavigate, creditCustomer }) {
 
         // Filter by category
         if (selectedCategory !== 'All') {
-            filtered = filtered.filter(item => item.category === selectedCategory);
+            filtered = filtered.filter(item => 
+                item.category === selectedCategory
+            );
         }
 
         // Filter by search query
@@ -37,7 +56,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
         }
 
         setFilteredItems(filtered);
-    }, [searchQuery, foodItems, selectedCategory]);
+    }, [searchQuery, selectedCategory, foodItems]);
 
     /**
      * Load all food items from the database
@@ -50,9 +69,21 @@ function BillingPage({ onNavigate, creditCustomer }) {
             setFilteredItems(items);
         } catch (error) {
             console.error('Error loading food items:', error);
-            alert('Failed to load food items. Please restart the app.');
+            setToast({ message: 'Failed to load food items. Please restart the app.', type: 'error' });
         } finally {
             setLoading(false);
+        }
+    }
+
+    /**
+     * Load all categories from the database
+     */
+    async function loadCategories() {
+        try {
+            const dbCategories = await window.electronAPI.getAllCategories();
+            setCategories([{ id: 0, name: 'All' }, ...dbCategories]);
+        } catch (error) {
+            console.error('Error loading categories:', error);
         }
     }
 
@@ -103,6 +134,25 @@ function BillingPage({ onNavigate, creditCustomer }) {
     }
 
     /**
+     * Handle price change from FoodCard double-click
+     */
+    function handlePriceChange(itemId, newPrice) {
+        // Update ONLY the items list (temporary change, not saved to DB)
+        setFoodItems((prevItems) =>
+            prevItems.map((item) =>
+                item.id === itemId ? { ...item, price: newPrice } : item
+            )
+        );
+        
+        // Also update cart if item is already in cart
+        setCart((prevCart) =>
+            prevCart.map((item) =>
+                item.id === itemId ? { ...item, price: newPrice } : item
+            )
+        );
+    }
+
+    /**
      * Calculate total amount
      */
     function calculateTotal() {
@@ -114,7 +164,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
      */
     const handlePrintBill = async () => {
         if (cart.length === 0) {
-            alert('Please add items to your bill first.');
+            setToast({ message: 'Please add items to your bill first.', type: 'warning' });
             return;
         }
 
@@ -139,7 +189,9 @@ function BillingPage({ onNavigate, creditCustomer }) {
             dateTime: dateTime,
             customerName: customerName,
             creditCustomerId: customerId,
-            billNumber: 'PENDING', // Will be generated on save
+            billNumber: editMode ? originalBillId : 'PENDING',
+            editMode: editMode,
+            originalBillId: originalBillId
         };
 
         // Navigate to preview page instead of printing immediately
@@ -155,19 +207,26 @@ function BillingPage({ onNavigate, creditCustomer }) {
         );
     }
 
+    const isBannerActive = editMode || creditCustomer;
+    
     return (
-        <div className="billing-page">
-            {/* Back Button */}
-            {onNavigate && (
-                <button className="back-btn-billing" onClick={() => onNavigate(creditCustomer ? 'credits' : 'home')}>
-                    ← Back to {creditCustomer ? 'Credits' : 'Home'}
-                </button>
+        <div className={`billing-page ${isBannerActive ? 'with-banner' : ''}`}>
+            <PageHeader 
+                onNavigate={onNavigate} 
+                backTo={editMode ? 'records' : (creditCustomer ? 'credits' : 'home')} 
+            />
+
+            {/* Edit Mode Banner */}
+            {editMode && (
+                <div className="edit-mode-banner">
+                    <p><i className="fa-solid fa-pen-to-square"></i> Editing Bill #{originalBillId} - Make changes and print to update</p>
+                </div>
             )}
 
             {/* Credit Customer Banner */}
-            {creditCustomer && (
+            {creditCustomer && !editMode && (
                 <div className="credit-banner">
-                    <p>📝 Billing for Credit Customer: <strong>{creditCustomer.customerName}</strong></p>
+                    <p><i className="fa-solid fa-file-pen"></i> Billing for Credit Customer: <strong>{creditCustomer.customerName}</strong></p>
                 </div>
             )}
 
@@ -189,10 +248,23 @@ function BillingPage({ onNavigate, creditCustomer }) {
                 <SearchBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
             </div>
 
+            {/* Category Filter */}
+            <div className="category-filter">
+                {categories.map((category) => (
+                    <button
+                        key={category.id}
+                        className={`category-btn ${selectedCategory === category.name ? 'active' : ''}`}
+                        onClick={() => setSelectedCategory(category.name)}
+                    >
+                        {category.name}
+                    </button>
+                ))}
+            </div>
+
             {/* Main Content */}
             <div className="billing-content">
                 {/* Food Items Grid (Left 2/3) */}
-                <div className="food-items-section">
+                <div className={`food-items-section ${(creditCustomer || editMode) ? 'with-banner' : ''}`}>
                     {filteredItems.length === 0 ? (
                         <div className="no-items">
                             <p>No food items found.</p>
@@ -212,6 +284,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
                                     key={item.id}
                                     item={item}
                                     onAddToCart={addToCart}
+                                    onPriceChange={handlePriceChange}
                                     isInCart={cart.some((cartItem) => cartItem.id === item.id)}
                                 />
                             ))}
@@ -220,16 +293,19 @@ function BillingPage({ onNavigate, creditCustomer }) {
                 </div>
 
                 {/* Cart Section (Right 1/3) */}
-                <div className="cart-section">
+                <div className={`cart-section ${isBannerActive ? 'with-banner' : ''}`}>
                     <Cart
                         cart={cart}
                         onUpdateQuantity={updateQuantity}
                         onRemoveItem={removeFromCart}
                         total={calculateTotal()}
                         onPrint={handlePrintBill}
+                        className={isBannerActive ? 'with-banner' : ''}
                     />
                 </div>
             </div>
+            
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         </div>
     );
 }

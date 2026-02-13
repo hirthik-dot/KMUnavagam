@@ -1,0 +1,25 @@
+/**
+ * CARD COMPONENT STYLES
+ * Clean white card with soft shadow
+ */
+
+.ui-card {
+    background-color: white;
+    border: 1px solid #E5E7EB;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.ui-card-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1F2937;
+    margin: 0 0 16px 0;
+    padding-bottom: 12px;
+    border-bottom: 3px solid #10B981;
+}
+
+.ui-card-content {
+    /* Content wrapper - inherits children styling */
+}

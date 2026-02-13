@@ -15,12 +15,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAllItemsAdmin: () => ipcRenderer.invoke('db:getAllItemsAdmin'),
 
     // Add a new food item
-    addItem: (nameTamil, nameEnglish, price, category, imagePath) =>
-        ipcRenderer.invoke('db:addItem', nameTamil, nameEnglish, price, category, imagePath),
+    addItem: (nameTamil, nameEnglish, price, imagePath, category) =>
+        ipcRenderer.invoke('db:addItem', nameTamil, nameEnglish, price, imagePath, category),
 
     // Update an existing food item
-    updateItem: (id, nameTamil, nameEnglish, price, category, imagePath) =>
-        ipcRenderer.invoke('db:updateItem', id, nameTamil, nameEnglish, price, category, imagePath),
+    updateItem: (id, nameTamil, nameEnglish, price, imagePath, category) =>
+        ipcRenderer.invoke('db:updateItem', id, nameTamil, nameEnglish, price, imagePath, category),
 
     // Toggle item active status (enable/disable)
     toggleItemStatus: (id, isActive) =>
@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Save a bill to database
     saveBill: (items, totalAmount, customerId) =>
         ipcRenderer.invoke('db:saveBill', items, totalAmount, customerId),
+
+    // Update an existing bill
+    updateBill: (billId, items, totalAmount) =>
+        ipcRenderer.invoke('db:updateBill', billId, items, totalAmount),
 
     // Get bill history
     getBillHistory: (limit) =>
@@ -67,6 +71,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Add a new expense
     addExpense: (description, amount, expenseDate) =>
         ipcRenderer.invoke('db:addExpense', description, amount, expenseDate),
+
+    // Update expense
+    updateExpense: (expenseId, description, amount) =>
+        ipcRenderer.invoke('db:updateExpense', expenseId, description, amount),
+
+    // Delete expense
+    deleteExpense: (expenseId) =>
+        ipcRenderer.invoke('db:deleteExpense', expenseId),
+
+    // Get today's expenses
+    getTodayExpenses: () =>
+        ipcRenderer.invoke('db:getTodayExpenses'),
+
+    // Get today's stats (cash sales, credit sales, expenses)
+    getTodayStats: () =>
+        ipcRenderer.invoke('db:getTodayStats'),
 
     // Get expenses by date range
     getExpensesByDateRange: (startDate, endDate) =>
@@ -103,4 +123,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Add a credit payment
     addCreditPayment: (customerId, amount, date) =>
         ipcRenderer.invoke('db:addCreditPayment', customerId, amount, date),
+
+    // ========== CATEGORIES ==========
+
+    // Get all categories
+    getAllCategories: () =>
+        ipcRenderer.invoke('db:getAllCategories'),
+
+    // Add a new category
+    addCategory: (name) =>
+        ipcRenderer.invoke('db:addCategory', name),
+
+    // Update category
+    updateCategory: (id, name) =>
+        ipcRenderer.invoke('db:updateCategory', id, name),
+
+    // Delete category
+    deleteCategory: (id) =>
+        ipcRenderer.invoke('db:deleteCategory', id),
 });

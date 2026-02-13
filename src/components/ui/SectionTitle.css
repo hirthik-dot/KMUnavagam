@@ -1,0 +1,13 @@
+/**
+ * SECTION TITLE COMPONENT STYLES
+ * Consistent section headings with green accent underline
+ */
+
+.section-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1F2937;
+    margin: 0 0 16px 0;
+    padding-bottom: 12px;
+    border-bottom: 3px solid #10B981;
+}

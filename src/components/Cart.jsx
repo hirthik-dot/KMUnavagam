@@ -1,8 +1,8 @@
 import './Cart.css';
 
-function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint }) {
+function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint, className = '' }) {
     return (
-        <div className="cart">
+        <div className={`cart ${className}`}>
             <h2 className="cart-title">Cart</h2>
 
             {cart.length === 0 ? (
@@ -71,6 +71,9 @@ function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint }) {
                     >
                         Print Bill
                     </button>
+
+                    {/* Cutting Border */}
+                    <div className="cart-cutting-border"></div>
                 </>
             )}
         </div>

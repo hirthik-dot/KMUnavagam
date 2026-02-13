@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import PageHeader from '../components/PageHeader';
+import Footer from '../components/Footer';
+import Toast from '../components/Toast';
 import './RecordsPage.css';
 
 /**
@@ -15,6 +18,7 @@ function RecordsPage({ onNavigate }) {
     const [selectedDate, setSelectedDate] = useState(null);
     const [dayDetails, setDayDetails] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [toast, setToast] = useState(null);
 
     // For Individual Bill View
     const [selectedBill, setSelectedBill] = useState(null);
@@ -117,9 +121,45 @@ function RecordsPage({ onNavigate }) {
             setBillItems(items);
         } catch (error) {
             console.error('Error loading bill items:', error);
-            alert('Failed to load bill items');
+            setToast({ message: 'Failed to load bill items', type: 'error' });
         } finally {
             setIsBillLoading(false);
+        }
+    };
+
+    // Edit and reprint bill - load into billing page
+    const handleEditAndReprint = async (bill) => {
+        try {
+            // Load bill items
+            const items = await window.electronAPI.getBillItems(bill.id);
+            
+            // Transform items to cart format (ensure item_id is preserved)
+            const cartItems = items.map(item => ({
+                id: item.item_id || item.id,
+                item_id: item.item_id || item.id,
+                name_tamil: item.name_tamil,
+                name_english: item.name_english,
+                price: item.rate,
+                quantity: item.quantity,
+                image_path: item.image_path || null
+            }));
+
+            // Prepare bill data for editing
+            const editBillData = {
+                editMode: true,
+                originalBillId: bill.id,
+                cart: cartItems,
+                creditCustomer: bill.bill_type === 'CREDIT' ? {
+                    creditCustomerId: bill.credit_customer_id,
+                    customerName: bill.customer_name
+                } : null
+            };
+
+            // Navigate to billing page with pre-filled cart
+            onNavigate('billing', editBillData);
+        } catch (error) {
+            console.error('Error loading bill for editing:', error);
+            setToast({ message: 'Failed to load bill for editing', type: 'error' });
         }
     };
 
@@ -133,11 +173,11 @@ function RecordsPage({ onNavigate }) {
     // Format date for display
     const formatDisplayDate = (dateStr) => {
         const date = new Date(dateStr + 'T00:00:00');
-        return date.toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric'
-        });
+        // Standardize to dd/mm/yyyy
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year}`;
     };
 
     // Calculate totals
@@ -154,15 +194,12 @@ function RecordsPage({ onNavigate }) {
 
     return (
         <div className="records-page">
-            {/* Back Button */}
-            <button className="back-btn" onClick={() => onNavigate('home')}>
-                ← Back to Home
-            </button>
+            <PageHeader onNavigate={onNavigate} backTo="home" />
 
             <div className="records-container">
                 {/* Header */}
                 <div className="records-header">
-                    <h1 className="records-title">📊 Daily Records</h1>
+                    <h1 className="records-title"><i className="fa-solid fa-chart-line"></i> Daily Records</h1>
                     <p className="records-subtitle">Sales, Expenses & Profit</p>
                 </div>
 
@@ -246,71 +283,100 @@ function RecordsPage({ onNavigate }) {
                         </div>
 
                         <div className="modal-body">
-                            <div className="details-section">
-                                <h3 className="section-title">📝 Bills ({dayDetails.bills.length})</h3>
-                                {dayDetails.bills.length === 0 ? (
-                                    <p className="no-data">No bills for this day</p>
-                                ) : (
-                                    <table className="details-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Bill #</th>
-                                                <th>Time</th>
-                                                <th>Type</th>
-                                                <th>Customer</th>
-                                                <th>Amount</th>
-                                                <th>Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {dayDetails.bills.map((bill) => (
-                                                <tr key={bill.id} className={bill.bill_type === 'CREDIT' ? 'credit-row' : ''}>
-                                                    <td>#{bill.id}</td>
-                                                    <td>{bill.time}</td>
-                                                    <td className="type-cell">
-                                                        <span className={`type-badge ${bill.bill_type.toLowerCase()}`}>
-                                                            {bill.bill_type}
-                                                        </span>
-                                                    </td>
-                                                    <td className="customer-cell">{bill.customer_name || '-'}</td>
-                                                    <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
-                                                    <td>
-                                                        <button
-                                                            className="view-btn-small"
-                                                            onClick={() => viewBillDetails(bill)}
-                                                        >
-                                                            View
-                                                        </button>
-                                                    </td>
+                            <div className="two-column-layout">
+                                {/* Left Column - Bills */}
+                                <div className="details-section">
+                                    <h3 className="section-title"><i className="fa-solid fa-file-invoice"></i> Bills ({dayDetails.bills.length})</h3>
+                                    {dayDetails.bills.length === 0 ? (
+                                        <p className="no-data">No bills for this day</p>
+                                    ) : (
+                                        <table className="details-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Bill #</th>
+                                                    <th>Time</th>
+                                                    <th>Type</th>
+                                                    <th>Customer</th>
+                                                    <th>Amount</th>
+                                                    <th>Action</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                )}
+                                            </thead>
+                                            <tbody>
+                                                {dayDetails.bills.map((bill) => (
+                                                    <tr key={bill.id} className={bill.bill_type === 'CREDIT' ? 'credit-row' : ''}>
+                                                        <td>#{bill.id}</td>
+                                                        <td>{bill.time}</td>
+                                                        <td className="type-cell">
+                                                            <span className={`type-badge ${bill.bill_type.toLowerCase()}`}>
+                                                                {bill.bill_type}
+                                                            </span>
+                                                        </td>
+                                                        <td className="customer-cell">{bill.customer_name || '-'}</td>
+                                                        <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
+                                                        <td>
+                                                            <div className="action-buttons">
+                                                                <button
+                                                                    className="view-btn-small"
+                                                                    onClick={() => viewBillDetails(bill)}
+                                                                >
+                                                                    View
+                                                                </button>
+                                                                <button
+                                                                    className="edit-reprint-btn"
+                                                                    onClick={() => handleEditAndReprint(bill)}
+                                                                    title="Edit and reprint this bill"
+                                                                >
+                                                                    Edit & Reprint
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+
+                                {/* Right Column - Expenses */}
+                                <div className="details-section">
+                                    <h3 className="section-title"><i className="fa-solid fa-wallet"></i> Expenses ({dayDetails.expenses.length})</h3>
+                                    {dayDetails.expenses.length === 0 ? (
+                                        <p className="no-data">No expenses for this day</p>
+                                    ) : (
+                                        <table className="details-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Description</th>
+                                                    <th>Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {dayDetails.expenses.map((expense) => (
+                                                    <tr key={expense.id}>
+                                                        <td>{expense.description}</td>
+                                                        <td>₹{expense.amount.toFixed(0)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
                             </div>
 
-                            <div className="details-section">
-                                <h3 className="section-title">💰 Expenses ({dayDetails.expenses.length})</h3>
-                                {dayDetails.expenses.length === 0 ? (
-                                    <p className="no-data">No expenses for this day</p>
-                                ) : (
-                                    <table className="details-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Description</th>
-                                                <th>Amount</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {dayDetails.expenses.map((expense) => (
-                                                <tr key={expense.id}>
-                                                    <td>{expense.description}</td>
-                                                    <td>₹{expense.amount.toFixed(0)}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                )}
+                            {/* Summary Footer */}
+                            <div className="modal-summary">
+                                <div className="summary-item">
+                                    <span className="summary-label">Total Sales:</span>
+                                    <span className="summary-value sales">₹{dayDetails.bills.reduce((sum, bill) => sum + bill.total_amount, 0).toFixed(0)}</span>
+                                </div>
+                                <div className="summary-item">
+                                    <span className="summary-label">Total Expenses:</span>
+                                    <span className="summary-value expenses">₹{dayDetails.expenses.reduce((sum, exp) => sum + exp.amount, 0).toFixed(0)}</span>
+                                </div>
+                                <div className="summary-item profit">
+                                    <span className="summary-label">Net Profit:</span>
+                                    <span className="summary-value">₹{(dayDetails.bills.reduce((sum, bill) => sum + bill.total_amount, 0) - dayDetails.expenses.reduce((sum, exp) => sum + exp.amount, 0)).toFixed(0)}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -363,6 +429,10 @@ function RecordsPage({ onNavigate }) {
                     </div>
                 </div>
             )}
+            
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            
+            <Footer />
         </div>
     );
 }

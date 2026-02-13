@@ -1,0 +1,62 @@
+/**
+ * GLOBAL THEME SYSTEM
+ * Elderly-friendly design - Government kiosk style
+ * Primary: Bright Green #10B981
+ * Background: Pure White #FFFFFF
+ * Text: Dark Gray #1F2937
+ */
+
+:root {
+    /* Color Palette */
+    --color-primary: #10B981;
+    --color-primary-dark: #059669;
+    --color-primary-darker: #047857;
+    --color-white: #FFFFFF;
+    --color-bg: #FFFFFF;
+    --color-text: #1F2937;
+    --color-text-light: #6B7280;
+    --color-border: #E5E7EB;
+    --color-border-dark: #D1D5DB;
+    --color-danger: #EF4444;
+    --color-danger-dark: #DC2626;
+    --color-success: #10B981;
+    --color-warning: #F59E0B;
+    --color-gray-bg: #F9FAFB;
+
+    /* Spacing Scale (8px rhythm) */
+    --spacing-xs: 8px;
+    --spacing-sm: 16px;
+    --spacing-md: 24px;
+    --spacing-lg: 32px;
+    --spacing-xl: 48px;
+
+    /* Typography Scale */
+    --font-size-body: 18px;
+    --font-size-body-large: 20px;
+    --font-size-button: 22px;
+    --font-size-button-large: 24px;
+    --font-size-heading-sm: 24px;
+    --font-size-heading-md: 28px;
+    --font-size-heading-lg: 32px;
+    --font-size-heading-xl: 48px;
+
+    /* Touch Targets */
+    --tap-target-min: 48px;
+    --tap-target-large: 56px;
+
+    /* Border Radius */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+
+    /* Borders */
+    --border-thin: 1px solid var(--color-border);
+    --border-medium: 2px solid var(--color-border-dark);
+    --border-thick: 3px solid var(--color-primary);
+}
