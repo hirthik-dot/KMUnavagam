@@ -9,7 +9,7 @@ import './CreditsPage.css';
  * Manage customers who buy on credit
  * Shows summary of all credit customers
  */
-function CreditsPage({ onNavigate }) {
+function CreditsPage({ onNavigate, navData }) {
     const [customers, setCustomers] = useState([]);
     const [showAddForm, setShowAddForm] = useState(false);
     const [newCustomer, setNewCustomer] = useState({ name: '', phone: '' });
@@ -18,7 +18,15 @@ function CreditsPage({ onNavigate }) {
 
     useEffect(() => {
         loadCustomers();
-    }, []);
+
+        // Show deletion success message if passed from details page
+        if (navData && navData.deletedCustomer) {
+            setToast({
+                message: `Customer "${navData.deletedCustomer}" deleted successfully.`,
+                type: 'success'
+            });
+        }
+    }, [navData]);
 
     const loadCustomers = async () => {
         setIsLoading(true);

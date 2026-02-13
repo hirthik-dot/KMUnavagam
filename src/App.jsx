@@ -44,7 +44,7 @@ function App() {
         return <AdminPage onNavigate={handleNavigate} />;
 
       case 'credits':
-        return <CreditsPage onNavigate={handleNavigate} />;
+        return <CreditsPage onNavigate={handleNavigate} navData={navData} />;
 
       case 'credit-details':
         return <CreditDetailsPage onNavigate={handleNavigate} customerId={navData} />;

@@ -133,6 +133,7 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
                 ) : (
                     <p 
                         className="food-price editable" 
+                        onClick={(e) => e.stopPropagation()}
                         onDoubleClick={handlePriceDoubleClick}
                         title="Double-click to edit price"
                     >

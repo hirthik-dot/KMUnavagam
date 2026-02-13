@@ -61,9 +61,36 @@ function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS bills (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       created_at TEXT NOT NULL,
-      total_amount REAL NOT NULL
+      total_amount REAL NOT NULL,
+      supplier_id INTEGER,
+      FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
     )
   `);
+
+  // Migration: Add supplier_id to bills if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE bills ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id)`);
+  } catch (error) {
+    // Column already exists
+  }
+
+  // Table 9: suppliers - stores staff/waiters who attend orders
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      is_active INTEGER DEFAULT 1,
+      is_deleted INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Migration: Add is_deleted to suppliers if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE suppliers ADD COLUMN is_deleted INTEGER DEFAULT 0`);
+  } catch (error) {
+    // Column already exists
+  }
 
   // Table 3: bill_items - stores items in each bill
   db.exec(`
@@ -246,14 +273,17 @@ function deleteItem(id) {
  * Save a new bill to the database
  * Used by: Billing Page when printing a bill
  */
-function saveBill(items, totalAmount, customerId = null) {
+function saveBill(items, totalAmount, customerId = null, supplierId = null) {
   console.log('--- Database: saveBill called ---');
   console.log('Total Amount:', totalAmount);
   console.log('Raw Customer ID Type:', typeof customerId);
+  console.log('Supplier ID:', supplierId);
 
-  // Ensure customerId is an integer if provided
+  // Ensure IDs are integers if provided
   const targetCustomerId = customerId ? parseInt(customerId, 10) : null;
+  const targetSupplierId = supplierId ? parseInt(supplierId, 10) : null;
   console.log('Parsed Customer ID:', targetCustomerId);
+  console.log('Parsed Supplier ID:', targetSupplierId);
 
   // Generate local timestamp (YYYY-MM-DDTHH:MM:SS)
   const now = new Date();
@@ -267,10 +297,10 @@ function saveBill(items, totalAmount, customerId = null) {
   const transaction = db.transaction((billItems) => {
     // 1. Insert the bill
     const billStmt = db.prepare(`
-      INSERT INTO bills (created_at, total_amount)
-      VALUES (?, ?)
+      INSERT INTO bills (created_at, total_amount, supplier_id)
+      VALUES (?, ?, ?)
     `);
-    const billResult = billStmt.run(localTimestamp, totalAmount);
+    const billResult = billStmt.run(localTimestamp, totalAmount, targetSupplierId);
     const billId = billResult.lastInsertRowid;
     console.log('Bill created with ID:', billId);
 
@@ -328,7 +358,9 @@ function saveBill(items, totalAmount, customerId = null) {
  */
 function getBillHistory(limit = 50) {
   const stmt = db.prepare(`
-    SELECT * FROM bills 
+    SELECT b.*, s.name as supplier_name 
+    FROM bills b
+    LEFT JOIN suppliers s ON b.supplier_id = s.id
     ORDER BY created_at DESC 
     LIMIT ?
   `);
@@ -360,21 +392,22 @@ function getBillItems(billId) {
  * Update an existing bill
  * Used by: Edit & Reprint feature
  */
-function updateBill(billId, items, totalAmount) {
+function updateBill(billId, items, totalAmount, supplierId = null) {
   console.log('--- Database: updateBill called ---');
   console.log('Bill ID:', billId);
   console.log('Total Amount:', totalAmount);
+  console.log('Supplier ID:', supplierId);
   console.log('Items:', items);
 
   const transaction = db.transaction((billItems) => {
-    // 1. Update bill total
+    // 1. Update bill total and supplier
     const billStmt = db.prepare(`
       UPDATE bills 
-      SET total_amount = ?
+      SET total_amount = ?, supplier_id = ?
       WHERE id = ?
     `);
-    billStmt.run(totalAmount, billId);
-    console.log('Bill total updated');
+    billStmt.run(totalAmount, supplierId, billId);
+    console.log('Bill total and supplier updated');
 
     // 2. Delete old bill items
     const deleteStmt = db.prepare(`
@@ -518,8 +551,8 @@ function getExpensesByDateRange(startDate, endDate) {
  * Get daily records (sales, expenses, profit) for a date range
  * Used by: Records Page
  */
-function getDailyRecords(startDate, endDate) {
-  const stmt = db.prepare(`
+function getDailyRecords(startDate, endDate, supplierId = null) {
+  let query = `
     SELECT 
       DATE(b.created_at) as date,
       COALESCE(SUM(CASE WHEN cb.customer_id IS NULL THEN b.total_amount ELSE 0 END), 0) as cash_sales,
@@ -529,11 +562,19 @@ function getDailyRecords(startDate, endDate) {
     FROM bills b
     LEFT JOIN credit_bills cb ON b.id = cb.bill_id
     WHERE DATE(b.created_at) >= ? AND DATE(b.created_at) <= ?
-    GROUP BY DATE(b.created_at)
-    ORDER BY date DESC
-  `);
-
-  const sales = stmt.all(startDate, endDate);
+  `;
+  
+  const params = [startDate, endDate];
+  
+  if (supplierId) {
+    query += ` AND b.supplier_id = ? `;
+    params.push(parseInt(supplierId, 10));
+  }
+  
+  query += ` GROUP BY DATE(b.created_at) ORDER BY date DESC`;
+  
+  const stmt = db.prepare(query);
+  const sales = stmt.all(...params);
 
   // Get expenses grouped by date
   const expenseStmt = db.prepare(`
@@ -598,10 +639,13 @@ function getBillsByDate(date) {
       TIME(b.created_at) as time,
       cc.name as customer_name,
       cb.customer_id as credit_customer_id,
+      s.name as supplier_name,
+      s.is_deleted as supplier_deleted,
       CASE WHEN cb.customer_id IS NOT NULL THEN 'CREDIT' ELSE 'CASH' END as bill_type
     FROM bills b
     LEFT JOIN credit_bills cb ON b.id = cb.bill_id
     LEFT JOIN credit_customers cc ON cb.customer_id = cc.id
+    LEFT JOIN suppliers s ON b.supplier_id = s.id
     WHERE DATE(b.created_at) = ?
     ORDER BY b.created_at DESC
   `);
@@ -697,6 +741,42 @@ function getAllCreditCustomers() {
     ...c,
     balance: c.total_credit - c.total_paid
   }));
+}
+
+/**
+ * Delete a credit customer and their linked records (payments and bill-links)
+ * NOTE: The main 'bills' records are preserved for accounting.
+ */
+function deleteCreditCustomer(customerId) {
+  try {
+    const targetId = parseInt(customerId, 10);
+    console.log(`--- Database: Attempting to delete customer ID: ${targetId} ---`);
+    
+    const deleteTx = db.transaction((id) => {
+      // 1. Delete payment records first (child table)
+      const payInfo = db.prepare('DELETE FROM credit_payments WHERE customer_id = ?').run(id);
+      console.log(`- Deleted ${payInfo.changes} payment records`);
+      
+      // 2. Delete links between bills and this customer (child table)
+      const billLinkInfo = db.prepare('DELETE FROM credit_bills WHERE customer_id = ?').run(id);
+      console.log(`- Deleted ${billLinkInfo.changes} bill links`);
+      
+      // 3. Delete the customer (parent table)
+      const custInfo = db.prepare('DELETE FROM credit_customers WHERE id = ?').run(id);
+      console.log(`- Deleted customer record: ${custInfo.changes} row(s)`);
+      
+      if (custInfo.changes === 0) {
+        throw new Error('Customer record not found');
+      }
+      
+      return true;
+    });
+
+    return deleteTx(targetId);
+  } catch (error) {
+    console.error('DATABASE ERROR in deleteCreditCustomer:', error.message);
+    throw error;
+  }
 }
 
 /**
@@ -832,6 +912,81 @@ function deleteCategory(id) {
 }
 
 
+// ========================================
+// SUPPLIER MANAGEMENT FUNCTIONS
+// ========================================
+
+/**
+ * Get all active suppliers
+ */
+function getAllSuppliers() {
+  const stmt = db.prepare('SELECT * FROM suppliers WHERE is_active = 1 AND is_deleted = 0 ORDER BY name ASC');
+  return stmt.all();
+}
+
+/**
+ * Get all suppliers (including inactive)
+ */
+function getAllSuppliersAdmin() {
+  const stmt = db.prepare('SELECT * FROM suppliers WHERE is_deleted = 0 ORDER BY name ASC');
+  return stmt.all();
+}
+
+/**
+ * Add a new supplier
+ */
+function addSupplier(name) {
+  const stmt = db.prepare('INSERT INTO suppliers (name) VALUES (?)');
+  const result = stmt.run(name);
+  return result.lastInsertRowid;
+}
+
+/**
+ * Update a supplier
+ */
+function updateSupplier(id, name, isActive) {
+  const stmt = db.prepare('UPDATE suppliers SET name = ?, is_active = ? WHERE id = ?');
+  stmt.run(name, isActive ? 1 : 0, id);
+}
+
+/**
+ * Delete a supplier
+ * We use soft delete (is_deleted = 1) to preserve historical data
+ */
+function deleteSupplier(id) {
+  const stmt = db.prepare('UPDATE suppliers SET is_deleted = 1 WHERE id = ?');
+  const result = stmt.run(id);
+  return result.changes > 0;
+}
+
+/**
+ * Get supplier-wise sales for a date range
+ */
+function getSupplierWiseSales(startDate, endDate, supplierId = null) {
+  let query = `
+    SELECT 
+      s.name as supplier_name,
+      s.is_deleted,
+      COUNT(b.id) as bill_count,
+      SUM(b.total_amount) as total_sales
+    FROM bills b
+    JOIN suppliers s ON b.supplier_id = s.id
+    WHERE DATE(b.created_at) >= ? AND DATE(b.created_at) <= ?
+  `;
+  
+  const params = [startDate, endDate];
+  
+  if (supplierId) {
+    query += ` AND s.id = ? `;
+    params.push(parseInt(supplierId, 10));
+  }
+  
+  query += ` GROUP BY s.id ORDER BY total_sales DESC`;
+  
+  const stmt = db.prepare(query);
+  return stmt.all(...params);
+}
+
 /**
  * Backup the database to a specific file path
  * Uses better-sqlite3's built-in backup method for safety and consistency
@@ -875,6 +1030,7 @@ module.exports = {
   // New credit functions
   addCreditCustomer,
   addCreditPayment,
+  deleteCreditCustomer,
   getAllCreditCustomers,
   getCreditCustomerDetails,
   // Category functions
@@ -882,6 +1038,13 @@ module.exports = {
   addCategory,
   updateCategory,
   deleteCategory,
+  // Supplier functions
+  getAllSuppliers,
+  getAllSuppliersAdmin,
+  addSupplier,
+  updateSupplier,
+  deleteSupplier,
+  getSupplierWiseSales,
   backupDatabase, // Add backup function
   db, // Export the database connection for advanced use
 };

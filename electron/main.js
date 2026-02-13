@@ -172,9 +172,9 @@ function setupIPCHandlers() {
   });
 
   // Save bill
-  ipcMain.handle('db:saveBill', async (event, items, totalAmount, customerId) => {
+  ipcMain.handle('db:saveBill', async (event, items, totalAmount, customerId, supplierId) => {
     try {
-      return db.saveBill(items, totalAmount, customerId);
+      return db.saveBill(items, totalAmount, customerId, supplierId);
     } catch (error) {
       console.error('Error saving bill:', error);
       throw error;
@@ -182,9 +182,9 @@ function setupIPCHandlers() {
   });
 
   // Update existing bill
-  ipcMain.handle('db:updateBill', async (event, billId, items, totalAmount) => {
+  ipcMain.handle('db:updateBill', async (event, billId, items, totalAmount, supplierId) => {
     try {
-      return db.updateBill(billId, items, totalAmount);
+      return db.updateBill(billId, items, totalAmount, supplierId);
     } catch (error) {
       console.error('Error updating bill:', error);
       throw error;
@@ -286,9 +286,9 @@ function setupIPCHandlers() {
   // ========== RECORDS OPERATIONS ==========
 
   // Get daily records (sales, expenses, profit)
-  ipcMain.handle('db:getDailyRecords', async (event, startDate, endDate) => {
+  ipcMain.handle('db:getDailyRecords', async (event, startDate, endDate, supplierId) => {
     try {
-      return db.getDailyRecords(startDate, endDate);
+      return db.getDailyRecords(startDate, endDate, supplierId);
     } catch (error) {
       console.error('Error getting daily records:', error);
       throw error;
@@ -347,6 +347,16 @@ function setupIPCHandlers() {
     }
   });
 
+  // Delete credit customer
+  ipcMain.handle('db:deleteCreditCustomer', async (event, id) => {
+    try {
+      return db.deleteCreditCustomer(id);
+    } catch (error) {
+      console.error('Error deleting credit customer:', error);
+      throw error;
+    }
+  });
+
   // ========== CATEGORY OPERATIONS ==========
 
   // Get all categories
@@ -385,6 +395,70 @@ function setupIPCHandlers() {
       return db.deleteCategory(id);
     } catch (error) {
       console.error('Error deleting category:', error);
+      throw error;
+    }
+  });
+
+  // ========== SUPPLIER OPERATIONS ==========
+
+  // Get all active suppliers
+  ipcMain.handle('db:getAllSuppliers', async () => {
+    try {
+      return db.getAllSuppliers();
+    } catch (error) {
+      console.error('Error getting suppliers:', error);
+      throw error;
+    }
+  });
+
+  // Get all suppliers (admin)
+  ipcMain.handle('db:getAllSuppliersAdmin', async () => {
+    try {
+      return db.getAllSuppliersAdmin();
+    } catch (error) {
+      console.error('Error getting admin suppliers:', error);
+      throw error;
+    }
+  });
+
+  // Add a new supplier
+  ipcMain.handle('db:addSupplier', async (event, name) => {
+    try {
+      return db.addSupplier(name);
+    } catch (error) {
+      console.error('Error adding supplier:', error);
+      throw error;
+    }
+  });
+
+  // Update supplier
+  ipcMain.handle('db:updateSupplier', async (event, id, name, isActive) => {
+    try {
+      db.updateSupplier(id, name, isActive);
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating supplier:', error);
+      throw error;
+    }
+  });
+
+  // Delete supplier
+  ipcMain.handle('db:deleteSupplier', async (event, id) => {
+    try {
+      db.deleteSupplier(id);
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting supplier:', error);
+      throw error;
+    }
+  });
+
+  // Get supplier-wise sales
+  ipcMain.handle('db:getSupplierWiseSales', async (event, startDate, endDate, supplierId) => {
+    try {
+      return db.getSupplierWiseSales(startDate, endDate, supplierId);
+    } catch (error) {
+      console.error('Error getting supplier sales:', error);
       throw error;
     }
   });
@@ -578,7 +652,7 @@ function setupIPCHandlers() {
  * Generate HTML for thermal receipt printing
  */
 function generateBillHTML(billData) {
-  const { billNumber, items, total, hotelName, address, fssai, license, phone, email, dateTime } = billData;
+  const { billNumber, items, total, hotelName, address, fssai, license, phone, email, dateTime, supplierName } = billData;
 
   // Calculate total quantity
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -606,9 +680,9 @@ function generateBillHTML(billData) {
           
           /* Arial is DARKER on thermal printers */
           font-family: Arial, sans-serif;
-          font-size: 11px;
+          font-size: 13px; /* Increased base size */
           line-height: 1.2;
-          font-weight: 600;
+          font-weight: 400; /* Default weight normal */
           
           color: #000;
           background: #fff;
@@ -659,7 +733,7 @@ function generateBillHTML(billData) {
         
         .divider {
           border-top: 2px dashed #000;
-          margin: 3px 0;
+          margin: 5px 0; /* Slightly increased margin */
         }
         
         /* ========== HEADER ========== */
@@ -670,7 +744,7 @@ function generateBillHTML(billData) {
         
         .hotel-name {
           font-size: 26px;
-          font-weight: 700;
+          font-weight: 800; /* Bolder as requested */
           margin-bottom: 2px;
         }
         
@@ -678,18 +752,17 @@ function generateBillHTML(billData) {
           font-size: 13px;
           line-height: 1.2;
           margin-bottom: 1px;
-          font-weight: 700;
+          font-weight: 400; /* Normal weight for header details */
         }
         
         /* ========== BILL INFO ========== */
         .bill-info {
-          margin-bottom: 3px;
-          font-size: 10px;
-          font-weight: 600;
+          margin-bottom: 5px;
+          font-size: 13px; /* Increased from 10px */
         }
         
         .bill-info-line {
-          margin-bottom: 2px;
+          margin-bottom: 3px;
         }
         
         /* ========== TABLE - MAXIMUM WIDTH ========== */
@@ -697,21 +770,21 @@ function generateBillHTML(billData) {
           width: 100%;
           max-width: 253px;
           border-collapse: collapse;
-          margin: 3px 0;
+          margin: 5px 0;
           table-layout: fixed; /* CRITICAL: Prevents column overflow */
         }
         
         .table th {
           border-bottom: 2px solid #000;
-          padding: 3px 2px;
-          font-size: 10px;
-          font-weight: 700;
+          padding: 5px 2px;
+          font-size: 13px;
+          font-weight: 700; /* Bold headers */
         }
         
         .table td {
-          padding: 4px 2px;
-          font-size: 10px;
-          font-weight: 600;
+          padding: 6px 2px;
+          font-size: 13px;
+          font-weight: 400; /* Normal item names */
           vertical-align: top;
         }
         
@@ -727,39 +800,34 @@ function generateBillHTML(billData) {
         .table td.qty {
           width: 40px;
           text-align: center;
-          font-weight: 700;
         }
         
         .table th.rate,
         .table td.rate {
           width: 40px;
           text-align: right;
-          font-weight: 700;
         }
         
         .table th.total,
         .table td.total {
           width: 40px;
           text-align: right;
-          font-weight: 700;
         }
         
         /* Total: 133 + 40 + 40 + 40 = 253px */
         
         .summary {
-          margin-top: 3px;
-          font-size: 10px;
-          font-weight: 600;
+          margin-top: 5px;
+          font-size: 13px;
         }
         
         .summary-line {
-          margin-bottom: 2px;
-          font-weight: 700;
+          margin-bottom: 3px;
         }
         
         .summary-line-flex {
           display: block;
-          margin-bottom: 2px;
+          margin-bottom: 3px;
         }
         
         .summary-line-flex::after {
@@ -770,48 +838,45 @@ function generateBillHTML(billData) {
         
         .summary-line-flex .left {
           float: left;
-          font-weight: 700;
         }
         
         .summary-line-flex .right {
           float: right;
-          font-weight: 700;
         }
         
+        /* ========== TOTAL SECTION - BIGGEST & CENTERED ========== */
         .total-section {
           border-top: 2px solid #000;
           border-bottom: 2px solid #000;
-          padding: 4px 0;
-          margin: 3px 0;
+          padding: 10px 0;
+          margin: 8px 0;
+          text-align: center;
         }
         
         .total-row {
-          font-size: 14px;
-          font-weight: 700;
+          /* No global bold to allow specific control */
         }
         
-        .total-row::after {
-          content: "";
-          display: table;
-          clear: both;
+        .total-label {
+          font-size: 16px; 
+          font-weight: 400; /* Normal text as requested */
+          margin-right: 15px; /* Added space between text and amount */
+          vertical-align: middle;
         }
         
-        .total-row .left {
-          float: left;
-        }
-        
-        .total-row .right {
-          float: right;
+        .total-amount {
+          font-size: 32px; 
+          font-weight: 800; /* Amount stays bold */
+          vertical-align: middle;
         }
         
         .payment-info {
-          margin: 3px 0;
-          font-size: 10px;
-          font-weight: 600;
+          margin: 5px 0;
+          font-size: 13px;
         }
         
         .payment-line {
-          margin-bottom: 2px;
+          margin-bottom: 3px;
         }
         
         .payment-line::after {
@@ -822,18 +887,16 @@ function generateBillHTML(billData) {
         
         .payment-line .left {
           float: left;
-          font-weight: 700;
         }
         
         .payment-line .right {
           float: right;
-          font-weight: 700;
         }
         
         .footer {
-          margin-top: 5px;
+          margin-top: 8px;
           text-align: center;
-          font-size: 10px;
+          font-size: 11px;
         }
       </style>
     </head>
@@ -843,7 +906,7 @@ function generateBillHTML(billData) {
         <div class="hotel-name">${hotelName || 'KM Unavagam'}</div>
         <div class="header-info">${address || 'Bodipalaiyam Main Road, Malumichampatti, Coimbatore, TAMIL NADU, 641050'}</div>
         <div class="header-info">FSSAI: ${fssai || '12425003003008'}</div>
-        <div class="header-info">GPay: 7867853371 / Ph: +91 6381591518</div>
+        <div class="header-info">GPay: 9629838800 / 7530031372  Ph:8680031372 </div>
         ${license ? `<div class="header-info">LIC: ${license}</div>` : ''}
         ${phone ? `<div class="header-info">Ph: ${phone}</div>` : ''}
         ${email ? `<div class="header-info">${email}</div>` : ''}
@@ -853,9 +916,10 @@ function generateBillHTML(billData) {
       
       <!-- BILL INFO -->
       <div class="bill-info">
-        <div class="bill-info-line">Bill No: ${billNumber}</div>
-        <div class="bill-info-line">Date: ${dateTime}</div>
-        <div class="bill-info-line">To: ${billData.customerName || 'Cash Sale'}</div>
+        <div class="bill-info-line"><span class="bold">Bill No:</span> ${billNumber}</div>
+        <div class="bill-info-line"><span class="bold">Date:</span> ${dateTime}</div>
+        <div class="bill-info-line"><span class="bold">To:</span> ${billData.customerName || 'Cash Sale'}</div>
+        ${supplierName ? `<div class="bill-info-line"><span class="bold">Supplier:</span> ${supplierName}</div>` : ''}
       </div>
       
       <div class="divider"></div>
@@ -893,11 +957,11 @@ function generateBillHTML(billData) {
         </div>
       </div>
       
-      <!-- TOTAL -->
+      <!-- TOTAL - CENTERED & BIGGEST -->
       <div class="total-section">
         <div class="total-row">
-          <span class="left">TOTAL</span>
-          <span class="right">₹${total.toFixed(0)}</span>
+          <span class="total-label">TOTAL</span>
+          <span class="total-amount bold">${total.toFixed(0)}</span>
         </div>
       </div>
       
@@ -922,8 +986,8 @@ function generateBillHTML(billData) {
       <!-- FOOTER -->
       <div class="footer">
         <div class="bold">Thank You! Visit Again!</div>
-        <div style="font-size: 8px; margin-top: 3px;">Software by LancingHub</div>
-        <div style="font-size: 8px;">Contact: +91 9952652246 / +91 9514001712</div>
+        <div style="font-size: 9px; margin-top: 3px;">Software by LancingHub</div>
+        <div style="font-size: 9px;">Contact: +91 9952652246 / +91 9514001712</div>
       </div>
     </body>
     </html>
@@ -934,7 +998,7 @@ function generateBillHTML(billData) {
  * Generate HTML for KOT (Staff Only)
  */
 function generateKOTHTML(billData) {
-  const { items, dateTime } = billData;
+  const { billNumber, items, dateTime, supplierName } = billData;
 
   return `
     <!DOCTYPE html>
@@ -1072,7 +1136,9 @@ function generateKOTHTML(billData) {
     </head>
     <body>
       <div class="center bold kot-title">KOT - PARCEL</div>
+      <div class="center kot-date">Bill No: ${billNumber}</div>
       <div class="center kot-date">Date: ${dateTime}</div>
+      ${supplierName ? `<div class="center kot-date">Supplier: ${supplierName}</div>` : ''}
       
       <div class="divider"></div>
       

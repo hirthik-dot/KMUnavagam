@@ -13,6 +13,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
     const [customer, setCustomer] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showPaymentForm, setShowPaymentForm] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
     const [toast, setToast] = useState(null);
     const getTodayLocalDate = () => {
@@ -30,7 +31,6 @@ function CreditDetailsPage({ onNavigate, customerId }) {
     const [isBillLoading, setIsBillLoading] = useState(false);
 
     useEffect(() => {
-        console.log('CreditDetailsPage: customerId prop is', customerId);
         if (customerId) {
             loadCustomerDetails();
         }
@@ -39,19 +39,28 @@ function CreditDetailsPage({ onNavigate, customerId }) {
     const loadCustomerDetails = async () => {
         setIsLoading(true);
         try {
-            // If customerId is an object (e.g. from navData), extract the ID
             const id = (typeof customerId === 'object' && customerId !== null)
                 ? (customerId.creditCustomerId || customerId.id)
                 : customerId;
 
-            console.log('Fetching details for ID:', id);
             const data = await window.electronAPI.getCreditCustomerDetails(id);
-            console.log('Data received:', data);
             setCustomer(data);
         } catch (error) {
             console.error('Error loading customer details:', error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const confirmDelete = async () => {
+        try {
+            await window.electronAPI.deleteCreditCustomer(customer.id);
+            onNavigate('credits', { deletedCustomer: customer.name });
+        } catch (error) {
+            console.error('Error deleting customer:', error);
+            setToast({ message: 'Failed to delete customer', type: 'error' });
+        } finally {
+            setShowDeleteConfirm(false);
         }
     };
 
@@ -99,8 +108,17 @@ function CreditDetailsPage({ onNavigate, customerId }) {
             <div className="details-container">
                 {/* Info Header */}
                 <div className="customer-info-header">
-                    <div>
-                        <h1 className="customer-name">{customer.name}</h1>
+                    <div className="name-and-phone">
+                        <div className="name-with-actions">
+                            <h1 className="customer-name">{customer.name}</h1>
+                            <button 
+                                className="delete-customer-btn" 
+                                onClick={() => setShowDeleteConfirm(true)}
+                                title="Delete this customer"
+                            >
+                                <i className="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
                         <p className="customer-phone"><i className="fa-solid fa-mobile-screen-button"></i> {customer.phone || 'No phone provided'}</p>
                     </div>
                     <div className="balance-card">
@@ -233,6 +251,26 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                 <button type="submit" className="save-btn">Save Payment</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Deletion Confirmation Modal */}
+            {showDeleteConfirm && (
+                <div className="modal-overlay">
+                    <div className="modal-content delete-confirm-modal">
+                        <div className="confirm-icon">
+                            <i className="fa-solid fa-triangle-exclamation"></i>
+                        </div>
+                        <h2>Delete Customer?</h2>
+                        <p className="confirm-text">
+                            Are you sure you want to delete <strong>{customer.name}</strong>? 
+                            This will permanently remove all their credit and payment records.
+                        </p>
+                        <div className="modal-actions">
+                            <button className="confirm-cancel-btn" onClick={() => setShowDeleteConfirm(false)}>No, Keep</button>
+                            <button className="confirm-delete-btn" onClick={confirmDelete}>Yes, Delete</button>
+                        </div>
                     </div>
                 </div>
             )}

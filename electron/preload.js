@@ -33,12 +33,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ========== BILLS ==========
 
     // Save a bill to database
-    saveBill: (items, totalAmount, customerId) =>
-        ipcRenderer.invoke('db:saveBill', items, totalAmount, customerId),
+    saveBill: (items, totalAmount, customerId, supplierId) =>
+        ipcRenderer.invoke('db:saveBill', items, totalAmount, customerId, supplierId),
 
     // Update an existing bill
-    updateBill: (billId, items, totalAmount) =>
-        ipcRenderer.invoke('db:updateBill', billId, items, totalAmount),
+    updateBill: (billId, items, totalAmount, supplierId) =>
+        ipcRenderer.invoke('db:updateBill', billId, items, totalAmount, supplierId),
 
     // Get bill history
     getBillHistory: (limit) =>
@@ -99,8 +99,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ========== RECORDS ==========
 
     // Get daily records (sales, expenses, profit)
-    getDailyRecords: (startDate, endDate) =>
-        ipcRenderer.invoke('db:getDailyRecords', startDate, endDate),
+    getDailyRecords: (startDate, endDate, supplierId) =>
+        ipcRenderer.invoke('db:getDailyRecords', startDate, endDate, supplierId),
 
     // Get bills by specific date
     getBillsByDate: (date) =>
@@ -124,6 +124,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addCreditPayment: (customerId, amount, date) =>
         ipcRenderer.invoke('db:addCreditPayment', customerId, amount, date),
 
+    // Delete credit customer
+    deleteCreditCustomer: (id) =>
+        ipcRenderer.invoke('db:deleteCreditCustomer', id),
+
     // ========== CATEGORIES ==========
 
     // Get all categories
@@ -141,6 +145,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Delete category
     deleteCategory: (id) =>
         ipcRenderer.invoke('db:deleteCategory', id),
+
+    // ========== SUPPLIERS ==========
+
+    // Get all active suppliers
+    getAllSuppliers: () =>
+        ipcRenderer.invoke('db:getAllSuppliers'),
+
+    // Get all suppliers (including inactive)
+    getAllSuppliersAdmin: () =>
+        ipcRenderer.invoke('db:getAllSuppliersAdmin'),
+
+    // Add a new supplier
+    addSupplier: (name) =>
+        ipcRenderer.invoke('db:addSupplier', name),
+
+    // Update supplier
+    updateSupplier: (id, name, isActive) =>
+        ipcRenderer.invoke('db:updateSupplier', id, name, isActive),
+
+    // Delete supplier
+    deleteSupplier: (id) =>
+        ipcRenderer.invoke('db:deleteSupplier', id),
+
+    // Get supplier-wise sales
+    getSupplierWiseSales: (startDate, endDate, supplierId) =>
+        ipcRenderer.invoke('db:getSupplierWiseSales', startDate, endDate, supplierId),
 
     // ========== SYSTEM ==========
     backupDatabase: () =>

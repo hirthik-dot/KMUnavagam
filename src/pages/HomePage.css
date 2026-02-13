@@ -4,20 +4,116 @@
 .home-page {
     min-height: 100vh;
     background: #FFFFFF;
-    padding-top: 80px;
+    padding-top: 20px;
+    display: flex;
+    flex-direction: column;
 }
 
 .home-container {
     max-width: 1200px;
     width: 100%;
     margin: 0 auto;
-    padding: 40px 20px;
+    padding: 20px; 
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    min-height: calc(100vh - 80px);
-    gap: 48px;
+    justify-content: flex-start;
+    flex: 1;
+    gap: 32px;
+}
+
+/* Hotel Header Section */
+.home-hotel-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 32px;
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f1f5f9;
+}
+
+.hotel-brand-info {
+    flex: 1;
+}
+
+.home-hotel-name {
+    font-size: 48px;
+    font-weight: 800;
+    color: #047857; /* Dark Green */
+    margin: 0 0 8px 0;
+    letter-spacing: -1px;
+    line-height: 1;
+}
+
+.home-hotel-address {
+    font-size: 18px;
+    color: #64748b;
+    margin: 0 0 16px 0;
+    font-weight: 500;
+}
+
+.home-hotel-details {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+
+.hotel-detail-item {
+    font-size: 15px;
+    color: #475569;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f8fafc;
+    padding: 8px 16px;
+    border-radius: 10px;
+}
+
+.hotel-detail-item i {
+    color: #10b981;
+}
+
+.home-live-datetime {
+    text-align: right;
+    display: flex;
+    flex-direction: row; /* Parallel layout */
+    align-items: center;
+    gap: 16px;
+    background: #f8fafc;
+    padding: 12px 24px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+}
+
+.live-time-wrapper {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    display: flex;
+    align-items: center;
+}
+
+.live-time {
+    font-size: 24px; /* Equal size */
+    font-weight: 800;
+    color: #047857; /* Matches hotel name green */
+    letter-spacing: -0.5px;
+    line-height: 1;
+}
+
+.live-date {
+    font-size: 24px; /* Equal size */
+    font-weight: 600;
+    color: #475569;
+    text-transform: capitalize;
+    border-left: 2px solid #cbd5e1; /* Visual separator */
+    padding-left: 16px;
+    line-height: 1;
 }
 
 /* Stats Cards Section */

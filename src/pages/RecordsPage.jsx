@@ -24,11 +24,32 @@ function RecordsPage({ onNavigate }) {
     const [selectedBill, setSelectedBill] = useState(null);
     const [billItems, setBillItems] = useState([]);
     const [isBillLoading, setIsBillLoading] = useState(false);
+    const [tab, setTab] = useState('daily'); // 'daily' or 'supplier'
+    const [supplierSales, setSupplierSales] = useState([]);
+    const [suppliers, setSuppliers] = useState([]);
+    const [supplierFilter, setSupplierFilter] = useState('');
 
-    // Load records when filter changes
+    // Load suppliers on mount
     useEffect(() => {
-        loadRecords();
-    }, [filter, customStartDate, customEndDate]);
+        const fetchSuppliers = async () => {
+            try {
+                const data = await window.electronAPI.getAllSuppliers();
+                setSuppliers(data);
+            } catch (err) {
+                console.error('Error fetching suppliers:', err);
+            }
+        };
+        fetchSuppliers();
+    }, []);
+
+    // Load records when filter, tab or supplier filter changes
+    useEffect(() => {
+        if (tab === 'daily') {
+            loadRecords();
+        } else {
+            loadSupplierSales();
+        }
+    }, [filter, customStartDate, customEndDate, tab, supplierFilter]);
 
     // Calculate date range based on filter
     const getDateRange = () => {
@@ -84,10 +105,28 @@ function RecordsPage({ onNavigate }) {
         setIsLoading(true);
         try {
             const { startDate, endDate } = getDateRange();
-            const data = await window.electronAPI.getDailyRecords(startDate, endDate);
+            const data = await window.electronAPI.getDailyRecords(startDate, endDate, supplierFilter);
             setRecords(data);
         } catch (error) {
             console.error('Error loading records:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Load supplier-wise sales
+    const loadSupplierSales = async () => {
+        if (filter === 'custom' && (!customStartDate || !customEndDate)) {
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const { startDate, endDate } = getDateRange();
+            const data = await window.electronAPI.getSupplierWiseSales(startDate, endDate, supplierFilter);
+            setSupplierSales(data);
+        } catch (error) {
+            console.error('Error loading supplier sales:', error);
         } finally {
             setIsLoading(false);
         }
@@ -165,7 +204,9 @@ function RecordsPage({ onNavigate }) {
                 creditCustomer: bill.bill_type === 'CREDIT' ? {
                     creditCustomerId: bill.credit_customer_id,
                     customerName: bill.customer_name
-                } : null
+                } : null,
+                supplierId: bill.supplier_id,
+                supplierName: bill.supplier_name
             };
 
             // Navigate to billing page with pre-filled cart
@@ -212,8 +253,15 @@ function RecordsPage({ onNavigate }) {
             <div className="records-container">
                 {/* Header */}
                 <div className="records-header">
-                    <h1 className="records-title"><i className="fa-solid fa-chart-line"></i> Daily Records</h1>
-                    <p className="records-subtitle">Sales, Expenses & Profit</p>
+                    <h1 className="records-title"><i className="fa-solid fa-chart-line"></i> Sales Records</h1>
+                    <div className="tab-buttons">
+                        <button className={`tab-btn ${tab === 'daily' ? 'active' : ''}`} onClick={() => setTab('daily')}>
+                            <i className="fas fa-calendar-day"></i> Daily Records
+                        </button>
+                        <button className={`tab-btn ${tab === 'supplier' ? 'active' : ''}`} onClick={() => setTab('supplier')}>
+                            <i className="fas fa-user-tie"></i> Supplier Sales
+                        </button>
+                    </div>
                     <button className="backup-btn" onClick={handleBackup} title="Download full data backup (SQLite format)">
                         <i className="fa-solid fa-download"></i> Backup Data
                     </button>
@@ -221,10 +269,26 @@ function RecordsPage({ onNavigate }) {
 
                 {/* Filters ... (Keep existing filter buttons) */}
                 <div className="filters">
-                    <button className={`filter-btn ${filter === 'today' ? 'active' : ''}`} onClick={() => setFilter('today')}>Today</button>
-                    <button className={`filter-btn ${filter === 'week' ? 'active' : ''}`} onClick={() => setFilter('week')}>This Week</button>
-                    <button className={`filter-btn ${filter === 'month' ? 'active' : ''}`} onClick={() => setFilter('month')}>This Month</button>
-                    <button className={`filter-btn ${filter === 'custom' ? 'active' : ''}`} onClick={() => setFilter('custom')}>Custom Range</button>
+                    <div className="filter-group">
+                        <button className={`filter-btn ${filter === 'today' ? 'active' : ''}`} onClick={() => setFilter('today')}>Today</button>
+                        <button className={`filter-btn ${filter === 'week' ? 'active' : ''}`} onClick={() => setFilter('week')}>This Week</button>
+                        <button className={`filter-btn ${filter === 'month' ? 'active' : ''}`} onClick={() => setFilter('month')}>This Month</button>
+                        <button className={`filter-btn ${filter === 'custom' ? 'active' : ''}`} onClick={() => setFilter('custom')}>Custom Range</button>
+                    </div>
+
+                    <div className="supplier-filter">
+                        <label>Filter by Supplier:</label>
+                        <select 
+                            value={supplierFilter} 
+                            onChange={(e) => setSupplierFilter(e.target.value)}
+                            className="supplier-select"
+                        >
+                            <option value="">All Suppliers</option>
+                            {suppliers.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
 
                 {/* Custom Date Range */}
@@ -237,28 +301,58 @@ function RecordsPage({ onNavigate }) {
                 )}
 
                 {/* Summary Cards */}
-                <div className="summary-cards">
-                    <div className="summary-card sales">
-                        <div className="card-label">Cash Sales</div>
-                        <div className="card-value">₹{totals.totalCashSales.toFixed(0)}</div>
+                {tab === 'daily' && (
+                    <div className="summary-cards">
+                        <div className="summary-card sales">
+                            <div className="card-label">Cash Sales</div>
+                            <div className="card-value">₹{totals.totalCashSales.toFixed(0)}</div>
+                        </div>
+                        <div className="summary-card credit">
+                            <div className="card-label">Credit Sales</div>
+                            <div className="card-value">₹{totals.totalCreditSales.toFixed(0)}</div>
+                        </div>
+                        <div className="summary-card expenses">
+                            <div className="card-label">Total Expenses</div>
+                            <div className="card-value">₹{totals.totalExpenses.toFixed(0)}</div>
+                        </div>
+                        <div className="summary-card profit">
+                            <div className="card-label">Net Profit</div>
+                            <div className="card-value">₹{totals.totalProfit.toFixed(0)}</div>
+                        </div>
                     </div>
-                    <div className="summary-card credit">
-                        <div className="card-label">Credit Sales</div>
-                        <div className="card-value">₹{totals.totalCreditSales.toFixed(0)}</div>
-                    </div>
-                    <div className="summary-card expenses">
-                        <div className="card-label">Total Expenses</div>
-                        <div className="card-value">₹{totals.totalExpenses.toFixed(0)}</div>
-                    </div>
-                    <div className="summary-card profit">
-                        <div className="card-label">Net Profit</div>
-                        <div className="card-value">₹{totals.totalProfit.toFixed(0)}</div>
-                    </div>
-                </div>
+                )}
 
                 {/* Records Table */}
                 {isLoading && !selectedDate ? (
                     <div className="loading">Loading records...</div>
+                ) : tab === 'supplier' ? (
+                    <div className="records-table-container">
+                        {supplierSales.length === 0 ? (
+                            <div className="no-records">No supplier records found for selected period</div>
+                        ) : (
+                            <table className="records-table">
+                                <thead>
+                                    <tr>
+                                        <th>Supplier Name</th>
+                                        <th>Total Orders</th>
+                                        <th>Total Sales (₹)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {supplierSales.map((supplier) => (
+                                        <tr key={supplier.supplier_id || 'unassigned'}>
+                                            <td className="date-cell">
+                                                <i className="fas fa-user-circle"></i> {supplier.supplier_name || 'Unassigned'}
+                                                {supplier.is_deleted === 1 && <span className="removed-badge">(Removed)</span>}
+                                            </td>
+                                            <td className="sales-cell">{supplier.bill_count}</td>
+                                            <td className="profit-cell positive">₹{supplier.total_sales.toFixed(2)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 ) : records.length === 0 ? (
                     <div className="no-records">No records found for selected period</div>
                 ) : (
@@ -313,6 +407,7 @@ function RecordsPage({ onNavigate }) {
                                                     <th>Time</th>
                                                     <th>Type</th>
                                                     <th>Customer</th>
+                                                    <th>Supplier</th>
                                                     <th>Amount</th>
                                                     <th>Action</th>
                                                 </tr>
@@ -328,6 +423,14 @@ function RecordsPage({ onNavigate }) {
                                                             </span>
                                                         </td>
                                                         <td className="customer-cell">{bill.customer_name || '-'}</td>
+                                                        <td className="customer-cell supplier-name-cell">
+                                                            {bill.supplier_name ? (
+                                                                <>
+                                                                    <i className="fas fa-user-circle"></i> {bill.supplier_name}
+                                                                    {bill.supplier_deleted === 1 && <span className="removed-badgeSmall">(Removed)</span>}
+                                                                </>
+                                                            ) : '-'}
+                                                        </td>
                                                         <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
                                                         <td>
                                                             <div className="action-buttons">

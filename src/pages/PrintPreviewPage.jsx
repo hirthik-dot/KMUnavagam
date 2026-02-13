@@ -21,7 +21,7 @@ function PrintPreviewPage({ onNavigate, billData }) {
         );
     }
 
-    const { items, total, dateTime, customerName, billNumber } = billData;
+    const { items, total, dateTime, customerName, billNumber, supplierName } = billData;
 
     /**
      * Handle Print Bill Only
@@ -37,7 +37,8 @@ function PrintPreviewPage({ onNavigate, billData }) {
                 await window.electronAPI.updateBill(
                     billData.originalBillId,
                     items,
-                    total
+                    total,
+                    billData.supplierId || null
                 );
                 finalBillId = billData.originalBillId;
             } else {
@@ -45,7 +46,8 @@ function PrintPreviewPage({ onNavigate, billData }) {
                 finalBillId = await window.electronAPI.saveBill(
                     items,
                     total,
-                    billData.creditCustomerId || null
+                    billData.creditCustomerId || null,
+                    billData.supplierId || null
                 );
             }
 
@@ -86,7 +88,8 @@ function PrintPreviewPage({ onNavigate, billData }) {
                 await window.electronAPI.updateBill(
                     billData.originalBillId,
                     items,
-                    total
+                    total,
+                    billData.supplierId || null
                 );
                 finalBillId = billData.originalBillId;
             } else {
@@ -94,7 +97,8 @@ function PrintPreviewPage({ onNavigate, billData }) {
                 finalBillId = await window.electronAPI.saveBill(
                     items,
                     total,
-                    billData.creditCustomerId || null
+                    billData.creditCustomerId || null,
+                    billData.supplierId || null
                 );
             }
 
@@ -151,6 +155,11 @@ function PrintPreviewPage({ onNavigate, billData }) {
                         <div className="bill-info-row">
                             <span>To: {customerName || 'Cash Sale'}</span>
                         </div>
+                        {supplierName && (
+                            <div className="bill-info-row bold">
+                                <span>Supplier: {supplierName}</span>
+                            </div>
+                        )}
                         <table className="bill-table">
                             <thead>
                                 <tr>
@@ -184,6 +193,7 @@ function PrintPreviewPage({ onNavigate, billData }) {
                     <div className="bill-paper kot-bill">
                         <div className="bill-center bold KOT-text">KOT - PARCEL</div>
                         <div className="bill-center">Date: {dateTime}</div>
+                        {supplierName && <div className="bill-center">Supplier: {supplierName}</div>}
                         <div className="bill-divider"></div>
                         <table className="bill-table">
                             <thead>

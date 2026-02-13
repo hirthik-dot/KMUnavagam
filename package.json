@@ -40,7 +40,7 @@
   },
   "build": {
     "appId": "com.hotel.billing",
-    "productName": "Hotel Billing System",
+    "productName": "Zerivo",
     "directories": {
       "output": "release"
     },
@@ -51,7 +51,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/icon.png"
+      "icon": "public/icon.jpeg"
     },
     "nsis": {
       "oneClick": false,
