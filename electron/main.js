@@ -66,7 +66,7 @@ function createWindow() {
  */
 app.whenReady().then(() => {
   console.log('🚀 Starting Hotel Billing Application...');
-  
+
   // Aggressively force British/Indian English for dd/mm/yyyy date format
   console.log('🌍 Setting application locale to en-GB');
   if (typeof app.setLocale === 'function') {
@@ -410,10 +410,11 @@ function setupIPCHandlers() {
     console.log(`🖨️ Silent Printing Type: ${type}`);
 
     return new Promise((resolve, reject) => {
+      // Create a hidden window with enough size to render content
       const silentWin = new BrowserWindow({
         show: false,
-        focusable: true, // Needs to be focusable to handle print events correctly in some versions
-        skipTaskbar: true,
+        width: 320, // Enough width for 80mm thermal printer
+        height: 1000, // Long enough for most bills
         webPreferences: {
           nodeIntegration: true,
           contextIsolation: false
@@ -421,51 +422,75 @@ function setupIPCHandlers() {
       });
 
       const html = type === 'KOT' ? generateKOTHTML(billData) : generateBillHTML(billData);
+
+      // Load content
       silentWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 
       silentWin.webContents.on('did-finish-load', () => {
-        // Small delay to ensure content is ready
-        setTimeout(() => {
-          silentWin.webContents.print({
-            silent: true,
-            printBackground: true,
-            deviceName: ''
-          }, (success, errorType) => {
-            // Cleanup the print window
-            if (silentWin && !silentWin.isDestroyed()) {
-              silentWin.destroy();
-            }
+        // Wait longer to ensure rendering is complete on slower systems
+        setTimeout(async () => {
+          try {
+            // Get all printers to find the default one
+            const printers = await silentWin.webContents.getPrintersAsync();
+            const defaultPrinter = printers.find(p => p.isDefault) || (printers.length > 0 ? printers[0] : null);
 
-            // FORCED RE-ACTIVATION OF MAIN WINDOW
-            if (mainWindow) {
-              // This sequence is the "nuclear option" for restoring focus on Windows
-              mainWindow.setEnabled(true);
-              mainWindow.setIgnoreMouseEvents(false);
+            console.log(`🖨️ Target Printer: ${defaultPrinter ? defaultPrinter.name : 'System Default'}`);
 
-              if (mainWindow.isMinimized()) mainWindow.restore();
+            const printOptions = {
+              silent: true,
+              printBackground: true,
+              deviceName: defaultPrinter ? defaultPrinter.name : '',
+              color: false,
+              margins: {
+                marginType: 'none'
+              },
+              landscape: false,
+              scaleFactor: 100,
+              // Explicit page size for 80mm thermal printer (in microns)
+              // 80mm = 80000 microns width
+              // Height set to A4 as fallback, thermal printer will auto-cut
+              pageSize: {
+                width: 80000,  // 80mm in microns
+                height: 297000 // A4 height, printer will auto-cut to actual length
+              }
+            };
 
-              mainWindow.show(); // Activates the window
-              mainWindow.focus(); // Focuses the window
+            silentWin.webContents.print(printOptions, (success, errorType) => {
+              // Cleanup the print window
+              if (silentWin && !silentWin.isDestroyed()) {
+                silentWin.destroy();
+              }
 
-              // Force focus into the web view
-              setTimeout(() => {
-                if (mainWindow) {
-                  mainWindow.webContents.focus();
-                  // Notify the renderer that printing is done and UI should be live
-                  mainWindow.webContents.send('print-finished');
-                }
-              }, 150);
-            }
+              // FORCED RE-ACTIVATION OF MAIN WINDOW (Nuclear Option)
+              if (mainWindow) {
+                mainWindow.setEnabled(true);
+                mainWindow.setIgnoreMouseEvents(false);
+                if (mainWindow.isMinimized()) mainWindow.restore();
+                mainWindow.show();
+                mainWindow.focus();
 
-            if (!success) {
-              console.error('Print failed:', errorType);
-              reject(new Error(errorType));
-            } else {
-              console.log('Print successful');
-              resolve(true);
-            }
-          });
-        }, 500);
+                setTimeout(() => {
+                  if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.focus();
+                    mainWindow.webContents.send('print-finished');
+                  }
+                }, 200);
+              }
+
+              if (!success) {
+                console.error(`❌ Print failed: ${errorType}`);
+                reject(new Error(errorType || 'Unknown printing error'));
+              } else {
+                console.log('✅ Print job sent successfully');
+                resolve(true);
+              }
+            });
+          } catch (err) {
+            console.error('❌ Error during print preparation:', err);
+            if (!silentWin.isDestroyed()) silentWin.destroy();
+            reject(err);
+          }
+        }, 1000); // 1 second delay to ensure rendering
       });
 
       silentWin.on('unresponsive', () => {
@@ -573,13 +598,10 @@ function generateBillHTML(billData) {
           word-break: break-word;
         }
         
-        /* ========== @MEDIA PRINT - CRITICAL ========== */
         @media print {
           @page {
-            /* Remove all browser default margins */
             margin: 0;
             padding: 0;
-            size: 58mm auto;
           }
           
           body {
@@ -928,12 +950,10 @@ function generateKOTHTML(billData) {
           word-break: break-word;
         }
         
-        /* ========== @MEDIA PRINT ========== */
         @media print {
           @page {
             margin: 0;
             padding: 0;
-            size: 58mm auto;
           }
           
           body {
