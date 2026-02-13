@@ -1,53 +1,55 @@
 /* RECORDS PAGE STYLES */
+/* Elderly-friendly records and reporting interface */
 
 .records-page {
     min-height: 100vh;
-    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-    padding: 20px;
+    background: #FFFFFF;
+    padding: 100px 20px 20px 20px;
 }
 
 .back-btn {
-    padding: 12px 24px;
+    padding: 12px 32px;
     background: white;
-    border: 2px solid #3b82f6;
+    border: 2px solid #D1D5DB;
     border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #3b82f6;
+    font-size: 22px;
+    font-weight: 700;
+    color: #1F2937;
     cursor: pointer;
-    transition: all 0.3s ease;
-    margin-bottom: 20px;
+    transition: all 0.2s ease;
+    margin-bottom: 24px;
+    min-height: 48px;
 }
 
 .back-btn:hover {
-    background: #3b82f6;
-    color: white;
+    background: #F9FAFB;
+    border-color: #9CA3AF;
 }
 
 .records-container {
     max-width: 1200px;
     margin: 0 auto;
     background: white;
-    border-radius: 20px;
+    border-radius: 16px;
     padding: 40px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 /* Header */
 .records-header {
     text-align: center;
-    margin-bottom: 30px;
+    margin-bottom: 32px;
 }
 
 .records-title {
-    font-size: 36px;
-    font-weight: bold;
-    color: #3b82f6;
-    margin: 0 0 10px 0;
+    font-size: 48px;
+    font-weight: 700;
+    color: #1F2937;
+    margin: 0 0 8px 0;
 }
 
 .records-subtitle {
-    font-size: 18px;
+    font-size: 20px;
     color: #6b7280;
     margin: 0;
 }
@@ -55,8 +57,8 @@
 /* Filters */
 .filters {
     display: flex;
-    gap: 15px;
-    margin-bottom: 20px;
+    gap: 16px;
+    margin-bottom: 24px;
     flex-wrap: wrap;
     justify-content: center;
 }
@@ -64,23 +66,24 @@
 .filter-btn {
     padding: 12px 24px;
     background: white;
-    border: 2px solid #e5e7eb;
+    border: 2px solid #D1D5DB;
     border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #6b7280;
+    font-size: 20px;
+    font-weight: 700;
+    color: #1F2937;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
+    min-height: 48px;
 }
 
 .filter-btn:hover {
-    border-color: #3b82f6;
-    color: #3b82f6;
+    border-color: #10B981;
+    color: #10B981;
 }
 
 .filter-btn.active {
-    background: #3b82f6;
-    border-color: #3b82f6;
+    background: #10B981;
+    border-color: #10B981;
     color: white;
 }
 
@@ -88,77 +91,80 @@
 .custom-range {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 16px;
     justify-content: center;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
     flex-wrap: wrap;
 }
 
 .date-input {
-    padding: 10px 15px;
-    border: 2px solid #e5e7eb;
+    padding: 12px 16px;
+    border: 2px solid #D1D5DB;
     border-radius: 8px;
-    font-size: 16px;
-    transition: all 0.3s ease;
+    font-size: 20px;
+    min-height: 48px;
+    transition: all 0.2s ease;
 }
 
 .date-input:focus {
     outline: none;
-    border-color: #3b82f6;
+    border-color: #10B981;
 }
 
 /* Summary Cards */
 .summary-cards {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 15px;
-    margin-bottom: 30px;
+    gap: 16px;
+    margin-bottom: 32px;
 }
 
 .summary-card {
-    padding: 20px;
+    padding: 24px;
     border-radius: 12px;
     text-align: center;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border: 2px solid #E5E7EB;
 }
 
 .summary-card.sales {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: white;
+    border-color: #10b981;
 }
 
 .summary-card.credit {
-    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-    color: white;
+    background: white;
+    border-color: #8b5cf6;
 }
 
 .summary-card.expenses {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    color: white;
+    background: white;
+    border-color: #f59e0b;
 }
 
 .summary-card.profit {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    color: white;
+    background: white;
+    border-color: #3b82f6;
 }
 
 .card-label {
-    font-size: 14px;
-    font-weight: 600;
-    margin-bottom: 8px;
-    opacity: 0.9;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #6B7280;
 }
 
 .card-value {
-    font-size: 24px;
-    font-weight: bold;
+    font-size: 36px;
+    font-weight: 700;
+    color: #1F2937;
 }
 
 /* Records Table */
 .records-table-container {
     overflow-x: auto;
     border-radius: 12px;
-    border: 2px solid #e5e7eb;
+    border: 2px solid #E5E7EB;
 }
 
 .records-table {
@@ -167,21 +173,22 @@
 }
 
 .records-table thead {
-    background: #f3f4f6;
+    background: #F9FAFB;
 }
 
 .records-table th {
-    padding: 15px;
+    padding: 16px;
     text-align: left;
-    font-size: 16px;
+    font-size: 20px;
     font-weight: 700;
-    color: #374151;
-    border-bottom: 2px solid #e5e7eb;
+    color: #1F2937;
+    border-bottom: 2px solid #E5E7EB;
 }
 
 .records-table tbody tr {
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid #E5E7EB;
     transition: all 0.2s ease;
+    min-height: 56px;
 }
 
 .clickable-row {
@@ -189,38 +196,37 @@
 }
 
 .clickable-row:hover {
-    background: #f9fafb;
-    transform: scale(1.01);
+    background: #F9FAFB;
 }
 
 .records-table td {
-    padding: 15px;
-    font-size: 16px;
+    padding: 16px;
+    font-size: 18px;
 }
 
 .date-cell {
-    font-weight: 600;
-    color: #374151;
+    font-weight: 700;
+    color: #1F2937;
 }
 
 .sales-cell {
     color: #059669;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .credit-cell {
     color: #7c3aed;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .expenses-cell {
     color: #d97706;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .profit-cell {
     font-weight: 700;
-    font-size: 18px;
+    font-size: 20px;
 }
 
 .profit-cell.positive {
@@ -232,25 +238,25 @@
 }
 
 .credit-row {
-    background-color: #f5f3ff;
+    background-color: #F5F3FF;
 }
 
 .type-badge {
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: bold;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 700;
     text-transform: uppercase;
 }
 
 .type-badge.cash {
-    background: #dcfce7;
-    color: #166534;
+    background: #D1FAE5;
+    color: #065F46;
 }
 
 .type-badge.credit {
-    background: #f3e8ff;
-    color: #6b21a8;
+    background: #EDE9FE;
+    color: #5B21B6;
 }
 
 .bold {
@@ -259,16 +265,17 @@
 
 .customer-cell {
     color: #4b5563;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 /* Loading & No Records */
 .loading,
 .no-records {
     text-align: center;
-    padding: 40px;
-    font-size: 18px;
+    padding: 48px;
+    font-size: 20px;
     color: #6b7280;
+    font-weight: 600;
 }
 
 /* Modal */
@@ -278,7 +285,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -288,9 +295,9 @@
 
 .modal-content {
     background: white;
-    border-radius: 20px;
-    max-width: 800px;
-    width: 100%;
+    border-radius: 16px;
+    width: 1600px !important;
+    max-width: 98vw !important;
     max-height: 90vh;
     overflow-y: auto;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -300,81 +307,138 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 25px 30px;
-    border-bottom: 2px solid #e5e7eb;
+    padding: 32px;
+    border-bottom: 2px solid #E5E7EB;
 }
 
 .modal-header h2 {
     margin: 0;
-    font-size: 24px;
-    color: #374151;
+    font-size: 28px;
+    color: #1F2937;
+    font-weight: 700;
 }
 
 .close-btn {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     border: none;
-    background: #f3f4f6;
-    border-radius: 50%;
-    font-size: 24px;
+    background: #F3F4F6;
+    border-radius: 8px;
+    font-size: 32px;
     cursor: pointer;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-weight: 700;
 }
 
 .close-btn:hover {
-    background: #ef4444;
+    background: #EF4444;
     color: white;
 }
 
 .modal-body {
-    padding: 30px;
+    padding: 32px;
+    overflow-x: visible;
+}
+
+.two-column-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-bottom: 32px;
+}
+
+.modal-summary {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    background: #F9FAFB;
+    padding: 24px;
+    border-radius: 12px;
+    border: 2px solid #E5E7EB;
+    margin-top: 32px;
+}
+
+.summary-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.summary-item.profit {
+    background: white;
+    padding: 16px 32px;
+    border-radius: 8px;
+    border: 2px solid #10B981;
+}
+
+.summary-label {
+    font-size: 18px;
+    font-weight: 700;
+    color: #6B7280;
+}
+
+.summary-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1F2937;
+}
+
+.summary-value.sales {
+    color: #10B981;
+}
+
+.summary-value.expenses {
+    color: #EF4444;
 }
 
 .details-section {
-    margin-bottom: 30px;
+    margin-bottom: 32px;
 }
 
 .section-title {
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 700;
-    color: #374151;
-    margin-bottom: 15px;
+    color: #1F2937;
+    margin-bottom: 16px;
 }
 
 .details-table {
     width: 100%;
     border-collapse: collapse;
-    border: 2px solid #e5e7eb;
+    border: 2px solid #E5E7EB;
     border-radius: 8px;
     overflow: hidden;
+    table-layout: auto;
 }
 
 .details-table thead {
-    background: #f3f4f6;
+    background: #F9FAFB;
 }
 
 .details-table th {
-    padding: 12px;
+    padding: 16px;
     text-align: left;
-    font-size: 14px;
-    font-weight: 600;
-    color: #6b7280;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1F2937;
+    white-space: nowrap;
 }
 
 .details-table td {
-    padding: 12px;
-    border-top: 1px solid #e5e7eb;
-    font-size: 15px;
+    padding: 16px;
+    border-top: 1px solid #E5E7EB;
+    font-size: 18px;
 }
 
 .no-data {
     text-align: center;
-    padding: 20px;
-    color: #9ca3af;
-    font-style: italic;
+    padding: 32px;
+    color: #9CA3AF;
+    font-size: 18px;
 }
 
 /* Responsive */
@@ -420,17 +484,43 @@
     background-color: #3b82f6;
     color: white;
     border: none;
-    padding: 6px 12px;
+    padding: 8px 16px;
     border-radius: 6px;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 15px;
+    font-weight: 700;
     cursor: pointer;
     transition: all 0.2s;
+    min-height: 38px;
+    white-space: nowrap;
 }
 
 .view-btn-small:hover {
     background-color: #2563eb;
-    transform: scale(1.05);
+}
+
+.edit-reprint-btn {
+    background-color: #10B981;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 38px;
+    white-space: nowrap;
+}
+
+.edit-reprint-btn:hover {
+    background-color: #059669;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: nowrap;
+    align-items: center;
 }
 
 /* Individual bill modal */

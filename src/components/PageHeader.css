@@ -1,0 +1,49 @@
+.page-header-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background: white;
+    border-bottom: 3px solid #10B981;
+    display: grid;
+    grid-template-columns: 200px 1fr 200px;
+    align-items: center;
+    padding: 0 32px;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.app-title-header {
+    font-size: 32px;
+    font-weight: 700;
+    color: #10B981;
+    text-align: center;
+    margin: 0;
+    letter-spacing: 1px;
+}
+
+.back-button-header {
+    padding: 12px 24px;
+    background: white;
+    border: 2px solid #D1D5DB;
+    border-radius: 8px;
+    font-size: 20px;
+    font-weight: 700;
+    color: #1F2937;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 48px;
+    width: fit-content;
+}
+
+.back-button-header:hover {
+    background: #F9FAFB;
+    border-color: #10B981;
+    color: #10B981;
+}
+
+.back-button-placeholder,
+.header-spacer {
+    width: 200px;
+}

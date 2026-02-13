@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import PageHeader from '../components/PageHeader';
+import Toast from '../components/Toast';
 import './PrintPreviewPage.css';
 
 /**
@@ -8,6 +10,7 @@ import './PrintPreviewPage.css';
  */
 function PrintPreviewPage({ onNavigate, billData }) {
     const [isPrinting, setIsPrinting] = useState(false);
+    const [toast, setToast] = useState(null);
 
     if (!billData) {
         return (
@@ -26,28 +29,44 @@ function PrintPreviewPage({ onNavigate, billData }) {
     const handlePrintBill = async () => {
         setIsPrinting(true);
         try {
-            // 1. Save to database (only official bill)
-            const id = await window.electronAPI.saveBill(
-                items,
-                total,
-                billData.creditCustomerId || null
-            );
+            let finalBillId;
 
-            // 2. Update bill number with real ID from DB
+            // Check if editing existing bill or creating new one
+            if (billData.editMode && billData.originalBillId) {
+                // UPDATE existing bill
+                await window.electronAPI.updateBill(
+                    billData.originalBillId,
+                    items,
+                    total
+                );
+                finalBillId = billData.originalBillId;
+            } else {
+                // CREATE new bill
+                finalBillId = await window.electronAPI.saveBill(
+                    items,
+                    total,
+                    billData.creditCustomerId || null
+                );
+            }
+
+            // Update bill number with real ID
             const finalBillData = {
                 ...billData,
-                billNumber: id.toString().padStart(4, '0')
+                billNumber: finalBillId.toString().padStart(4, '0')
             };
 
-            // 3. Print silently
+            // Print silently
             await window.electronAPI.printSilent(finalBillData, 'BILL');
 
-            // 4. Navigate back
-            alert('Bill Printed Successfully!');
-            onNavigate(billData.creditCustomerId ? 'credits' : 'billing');
+            // Navigate back
+            const successMsg = billData.editMode ? 'Bill Updated & Reprinted!' : 'Bill Printed Successfully!';
+            setToast({ message: successMsg, type: 'success' });
+            setTimeout(() => {
+                onNavigate(billData.editMode ? 'records' : (billData.creditCustomerId ? 'credits' : 'billing'));
+            }, 1500);
         } catch (error) {
             console.error('Print Error:', error);
-            alert('Printing Failed: ' + error.message);
+            setToast({ message: 'Printing Failed: ' + error.message, type: 'error' });
         } finally {
             setIsPrinting(false);
         }
@@ -59,30 +78,46 @@ function PrintPreviewPage({ onNavigate, billData }) {
     const handlePrintKOTAndBill = async () => {
         setIsPrinting(true);
         try {
-            // 1. Save to database (only official bill)
-            const id = await window.electronAPI.saveBill(
-                items,
-                total,
-                billData.creditCustomerId || null
-            );
+            let finalBillId;
 
-            // 2. Update bill number
+            // Check if editing existing bill or creating new one
+            if (billData.editMode && billData.originalBillId) {
+                // UPDATE existing bill
+                await window.electronAPI.updateBill(
+                    billData.originalBillId,
+                    items,
+                    total
+                );
+                finalBillId = billData.originalBillId;
+            } else {
+                // CREATE new bill
+                finalBillId = await window.electronAPI.saveBill(
+                    items,
+                    total,
+                    billData.creditCustomerId || null
+                );
+            }
+
+            // Update bill number
             const finalBillData = {
                 ...billData,
-                billNumber: id.toString().padStart(4, '0')
+                billNumber: finalBillId.toString().padStart(4, '0')
             };
 
-            // 3. Print KOT silently (KOT is not saved in DB)
+            // Print KOT silently
             await window.electronAPI.printSilent(finalBillData, 'KOT');
 
-            // 4. Print Bill silently
+            // Print Bill silently
             await window.electronAPI.printSilent(finalBillData, 'BILL');
 
-            alert('KOT & Bill Printed Successfully!');
-            onNavigate(billData.creditCustomerId ? 'credits' : 'billing');
+            const successMsg = billData.editMode ? 'Bill Updated & Reprinted with KOT!' : 'KOT & Bill Printed Successfully!';
+            setToast({ message: successMsg, type: 'success' });
+            setTimeout(() => {
+                onNavigate(billData.editMode ? 'records' : (billData.creditCustomerId ? 'credits' : 'billing'));
+            }, 1500);
         } catch (error) {
             console.error('Print Error:', error);
-            alert('Printing Failed: ' + error.message);
+            setToast({ message: 'Printing Failed: ' + error.message, type: 'error' });
         } finally {
             setIsPrinting(false);
         }
@@ -90,6 +125,8 @@ function PrintPreviewPage({ onNavigate, billData }) {
 
     return (
         <div className="preview-page">
+            <PageHeader onNavigate={onNavigate} backTo="billing" />
+            
             <div className="preview-header">
                 <h1>🖨️ Print Preview</h1>
                 <div className="header-actions">
@@ -186,6 +223,8 @@ function PrintPreviewPage({ onNavigate, billData }) {
                     {isPrinting ? 'Printing...' : 'PRINT KOT + BILL'}
                 </button>
             </div>
+            
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         </div>
     );
 }

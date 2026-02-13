@@ -1,47 +1,77 @@
-/* Back Button */
-.back-btn-billing {
-    padding: 12px 24px;
-    background: white;
-    border: 2px solid #10b981;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #10b981;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    margin-bottom: 15px;
-}
-
-.back-btn-billing:hover {
-    background: #10b981;
-    color: white;
-}
+/* BILLING PAGE STYLES */
+/* Elderly-friendly billing interface */
 
 .billing-page {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 40px);
-    gap: 1rem;
-    padding: 20px;
+    height: 100vh;
+    gap: 12px;
+    padding: 90px 20px 80px 20px;
+    background: #FFFFFF;
+    overflow: hidden;
 }
 
+.billing-page.with-banner {
+    padding-bottom: 120px;
+}
+
+
+/* Back Button - will be replaced with unified component */
+.back-btn-billing {
+    padding: 12px 32px;
+    background: white;
+    border: 2px solid #D1D5DB;
+    border-radius: 8px;
+    font-size: 22px;
+    font-weight: 700;
+    color: #1F2937;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 16px;
+    min-height: 48px;
+}
+
+.back-btn-billing:hover {
+    background: #F9FAFB;
+    border-color: #9CA3AF;
+}
+
+/* Credit Customer Banner */
 .credit-banner {
     background-color: #8b5cf6;
     color: white;
-    padding: 12px 20px;
-    border-radius: 8px;
-    font-size: 18px;
-    margin-bottom: 5px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    padding: 16px 24px;
+    border-radius: 12px;
+    font-size: 20px;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .credit-banner p {
     margin: 0;
+    font-size: 20px;
 }
 
 .credit-banner strong {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+/* Edit Mode Banner */
+.edit-mode-banner {
+    background-color: #F59E0B;
+    color: white;
+    padding: 16px 24px;
+    border-radius: 12px;
     font-size: 20px;
-    text-decoration: underline;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.edit-mode-banner p {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
 }
 
 /* Search Section */
@@ -49,36 +79,80 @@
     width: 100%;
 }
 
-/* Main Content */
+/* Category Filter */
+.category-filter {
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+    margin-bottom: 8px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+}
+
+.category-btn {
+    padding: 12px 24px;
+    background: white;
+    border: 2px solid #D1D5DB;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1F2937;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    min-height: 48px;
+}
+
+.category-btn:hover {
+    background: #F9FAFB;
+    border-color: #10B981;
+    color: #10B981;
+}
+
+.category-btn.active {
+    background: #10B981;
+    border-color: #10B981;
+    color: white;
+}
+
+/* Main Content - 2/3 + 1/3 Layout */
 .billing-content {
     display: flex;
-    gap: 2rem;
+    gap: 24px;
     flex: 1;
-    overflow: hidden;
+    overflow: visible;
+    margin-bottom: 40px;
 }
 
 /* Food Items Section (Left 2/3) */
 .food-items-section {
     flex: 2;
     overflow-y: auto;
-    padding-right: 1rem;
+    padding-right: 16px;
+    padding-bottom: 20px;
+    max-height: calc(100vh - 280px);
+}
+
+.food-items-section.with-banner {
+    max-height: calc(100vh - 380px);
 }
 
 .food-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1.5rem;
+    gap: 24px;
 }
 
 .no-items {
     text-align: center;
-    padding: 4rem 2rem;
+    padding: 64px 32px;
 }
 
 .no-items p {
-    font-size: 1.5rem;
+    font-size: 24px;
     color: #6B7280;
-    margin-bottom: 1.5rem;
+    margin-bottom: 24px;
 }
 
 /* Cart Section (Right 1/3) */
@@ -86,7 +160,16 @@
     flex: 1;
     min-width: 350px;
     max-width: 450px;
+    position: sticky;
+    top: 80px;
+    align-self: flex-start;
+    height: calc(100vh - 160px);
 }
+
+.cart-section.with-banner {
+    height: calc(100vh - 240px);
+}
+
 
 /* Loading State */
 .loading-container {
@@ -95,13 +178,13 @@
     align-items: center;
     justify-content: center;
     height: 400px;
-    gap: 1.5rem;
+    gap: 48px;
 }
 
 .loading-spinner {
-    width: 60px;
-    height: 60px;
-    border: 5px solid #E5E7EB;
+    width: 64px;
+    height: 64px;
+    border: 6px solid #E5E7EB;
     border-top-color: #10B981;
     border-radius: 50%;
     animation: spin 1s linear infinite;
@@ -114,23 +197,24 @@
 }
 
 .loading-text {
-    font-size: 1.5rem;
+    font-size: 20px;
     color: #6B7280;
+    font-weight: 600;
 }
 
 /* Scrollbar Styling */
 .food-items-section::-webkit-scrollbar {
-    width: 8px;
+    width: 10px;
 }
 
 .food-items-section::-webkit-scrollbar-track {
     background: #F3F4F6;
-    border-radius: 4px;
+    border-radius: 5px;
 }
 
 .food-items-section::-webkit-scrollbar-thumb {
     background: #10B981;
-    border-radius: 4px;
+    border-radius: 5px;
 }
 
 .food-items-section::-webkit-scrollbar-thumb:hover {

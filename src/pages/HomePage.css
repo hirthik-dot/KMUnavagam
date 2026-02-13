@@ -1,46 +1,86 @@
 /* HOME PAGE STYLES */
-/* White + Green theme, large touch-friendly buttons */
+/* Elderly-friendly design - white background, large touch buttons */
 
 .home-page {
     min-height: 100vh;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
+    background: #FFFFFF;
+    padding-top: 80px;
 }
 
 .home-container {
-    max-width: 800px;
+    max-width: 1200px;
     width: 100%;
+    margin: 0 auto;
+    padding: 40px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 80px);
+    gap: 48px;
 }
 
-/* Header */
-.home-header {
+/* Stats Cards Section */
+.home-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    width: 100%;
+    margin-bottom: 20px;
+}
+
+.stat-card {
+    background: white;
+    border: 3px solid;
+    border-radius: 16px;
+    padding: 32px 24px;
     text-align: center;
-    margin-bottom: 50px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.06);
+    transition: all 0.2s ease;
 }
 
-.home-title {
-    font-size: 48px;
-    font-weight: bold;
-    color: #10b981;
-    margin: 0 0 10px 0;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
 }
 
-.home-subtitle {
-    font-size: 20px;
-    color: #6b7280;
-    margin: 0;
+.stat-cash {
+    border-color: #10B981;
+    background: linear-gradient(135deg, #F0FDF4 0%, white 100%);
+}
+
+.stat-credit {
+    border-color: #8B5CF6;
+    background: linear-gradient(135deg, #F5F3FF 0%, white 100%);
+}
+
+.stat-expenses {
+    border-color: #F59E0B;
+    background: linear-gradient(135deg, #FFFBEB 0%, white 100%);
+}
+
+.stat-label {
+    font-size: 18px;
+    font-weight: 600;
+    color: #6B7280;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 42px;
+    font-weight: 700;
+    color: #1F2937;
 }
 
 /* Button Grid */
 .home-buttons {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 25px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
     padding: 20px;
+    width: 100%;
 }
 
 /* Large Buttons */
@@ -49,80 +89,94 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 15px;
-    padding: 50px 30px;
-    border: none;
-    border-radius: 20px;
-    font-size: 24px;
+    gap: 20px;
+    padding: 50px 40px;
+    border: 3px solid #E5E7EB;
+    border-radius: 24px;
+    font-size: 28px;
     font-weight: bold;
     cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
     background: white;
-    color: #333;
+    color: #1F2937;
+    min-height: 220px;
 }
 
 .home-btn:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    transform: scale(1.02);
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
 }
 
 .home-btn:active {
-    transform: translateY(-2px);
+    transform: scale(0.98);
 }
 
 .btn-icon {
-    font-size: 60px;
+    font-size: 72px;
+    line-height: 1;
 }
 
 .btn-text {
-    font-size: 24px;
+    font-size: 28px;
+    line-height: 1;
 }
 
-/* Button Colors */
+/* Button Colors - Primary green for billing, others with colored backgrounds */
 .home-btn-billing {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     color: white;
+    border-color: #10b981;
 }
 
 .home-btn-billing:hover {
     background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    border-color: #059669;
+    transform: scale(1.05);
 }
 
 .home-btn-records {
     background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     color: white;
+    border-color: #3b82f6;
 }
 
 .home-btn-records:hover {
     background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    border-color: #2563eb;
 }
 
 .home-btn-expenses {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
     color: white;
+    border-color: #f59e0b;
 }
 
 .home-btn-expenses:hover {
     background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-}
-
-.home-btn-admin {
-    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-    color: white;
-}
-
-.home-btn-admin:hover {
-    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    border-color: #d97706;
 }
 
 .home-btn-credits {
     background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
     color: white;
+    border-color: #8b5cf6;
 }
 
 .home-btn-credits:hover {
     background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+    border-color: #7c3aed;
+}
+
+.home-btn-admin {
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    color: white;
+    border-color: #6b7280;
+}
+
+.home-btn-admin:hover {
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    border-color: #4b5563;
 }
 
 /* Responsive */
@@ -136,10 +190,10 @@
     }
 
     .btn-icon {
-        font-size: 50px;
+        font-size: 56px;
     }
 
     .btn-text {
-        font-size: 20px;
+        font-size: 22px;
     }
 }
