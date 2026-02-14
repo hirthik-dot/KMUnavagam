@@ -27,7 +27,7 @@ function Footer() {
                     <div className="footer-social-section">
                         <span className="footer-social-title">Connect With Us</span>
                         <div className="footer-social-icons">
-                            <a href="https://instagram.com/lancinghub" target="_blank" rel="noopener noreferrer" className="social-icon-btn">
+                            <a href="https://www.instagram.com/lancing_hub?igsh=bzA3czhseGlmM2o3" target="_blank" rel="noopener noreferrer" className="social-icon-btn">
                                 <i className="fab fa-instagram"></i>
                             </a>
                             <a href="https://wa.me/919514001712" target="_blank" rel="noopener noreferrer" className="social-icon-btn">
