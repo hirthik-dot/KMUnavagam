@@ -27,6 +27,7 @@ A simple, touch-friendly billing system designed for elderly users, built with E
    - Install the LTS version
 
 2. **Install Dependencies**
+
    ```bash
    npm install
    ```
@@ -48,9 +49,9 @@ The application window will open automatically!
 
 ## 📖 Documentation
 
-- **Setup Guide** - Complete beginner-friendly guide (see `.gemini/antigravity/brain/` folder)
-- **Walkthrough** - Technical documentation
-- **Implementation Plan** - Original plan
+- **Current Status** - Complete project overview and recent updates (see [SUMMARY.md](./SUMMARY.md))
+- **Features Guide** - Detailed guide on new modules (see [NEW_FEATURES_GUIDE.md](./NEW_FEATURES_GUIDE.md))
+- **Thermal Print Fix** - Documentation for printer troubleshooting (see [THERMAL_RECEIPT_FIX.md](./THERMAL_RECEIPT_FIX.md))
 
 ---
 
@@ -78,12 +79,14 @@ hotel-billing-app/
 ## 🎯 Usage
 
 ### Billing Page
+
 1. Search for food items
 2. Click items to add to cart
 3. Adjust quantities with +/− buttons
 4. Click "PRINT BILL" to print
 
 ### Admin Page
+
 1. Click "Admin" button at top
 2. Fill form to add new items
 3. Edit/Enable/Disable/Delete existing items
@@ -95,6 +98,7 @@ hotel-billing-app/
 **Location:** `database/hotel.db`
 
 **Tables:**
+
 - `items` - Food items (Tamil name, English name, price)
 - `bills` - Bill records (date, total)
 - `bill_items` - Bill details (items, quantities)
@@ -115,10 +119,10 @@ Output: `release/Hotel Billing System Setup 1.0.0.exe`
 
 ## 🛠️ Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Run in development mode |
-| `npm run build` | Build React app |
+| Command             | Description             |
+| ------------------- | ----------------------- |
+| `npm run dev`       | Run in development mode |
+| `npm run build`     | Build React app         |
 | `npm run build:win` | Build Windows installer |
 
 ---
@@ -144,12 +148,15 @@ Output: `release/Hotel Billing System Setup 1.0.0.exe`
 ## 🐛 Troubleshooting
 
 ### "npm is not recognized"
+
 - Install Node.js and restart terminal
 
 ### "Cannot find module 'better-sqlite3'"
+
 - Run: `npx electron-rebuild`
 
 ### Database not found
+
 - Delete `database` folder and restart app
 
 ---
