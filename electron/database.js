@@ -29,141 +29,165 @@ const db = new Database(dbPath);
 db.pragma('foreign_keys = ON');
 
 /**
+ * Helper: Get table structure info
+ * Uses PRAGMA table_info() to safely check existing columns
+ */
+function getTableColumns(tableName) {
+  try {
+    const stmt = db.prepare(`PRAGMA table_info(${tableName})`);
+    return stmt.all().map(col => col.name);
+  } catch (error) {
+    return [];
+  }
+}
+
+/**
+ * Helper: Safely add column if it doesn't exist
+ * Prevents "column already exists" errors
+ */
+function addColumnIfNotExists(tableName, columnDef) {
+  try {
+    const columns = getTableColumns(tableName);
+    const columnName = columnDef.split(' ')[0];
+    
+    if (!columns.includes(columnName)) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnDef}`);
+      console.log(`✅ Added column: ${tableName}.${columnName}`);
+    }
+  } catch (error) {
+    console.warn(`⚠️  Failed to add column to ${tableName}:`, error.message);
+  }
+}
+
+/**
  * Initialize the database - create tables if they don't exist
  * This runs when the app starts for the first time
+ * Uses PRAGMA table_info() for safe migrations
  */
 function initializeDatabase() {
   console.log('🔧 Initializing database...');
 
-  // Table 1: items - stores all food items
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name_tamil TEXT NOT NULL,
-      name_english TEXT NOT NULL,
-      price REAL NOT NULL,
-      category TEXT DEFAULT 'Others',
-      image_path TEXT,
-      category TEXT DEFAULT 'Other',
-      is_active INTEGER DEFAULT 1
-    )
-  `);
-
-  // Add category column if it doesn't exist (migration)
   try {
-    db.exec(`ALTER TABLE items ADD COLUMN category TEXT DEFAULT 'Other'`);
-  } catch (error) {
-    // Column already exists, ignore error
-  }
+    // Table 1: items - stores all food items
+    // FIXED: Removed duplicate category column definition
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name_tamil TEXT NOT NULL,
+        name_english TEXT NOT NULL,
+        price REAL NOT NULL,
+        category TEXT DEFAULT 'Other',
+        image_path TEXT,
+        is_active INTEGER DEFAULT 1
+      )
+    `);
+
+    // Safe migration: Ensure critical columns exist
+    addColumnIfNotExists('items', 'category TEXT DEFAULT \'Other\'');
+    addColumnIfNotExists('items', 'image_path TEXT');
+    addColumnIfNotExists('items', 'is_active INTEGER DEFAULT 1');
 
   // Table 2: bills - stores bill information
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS bills (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      created_at TEXT NOT NULL,
-      total_amount REAL NOT NULL,
-      supplier_id INTEGER,
-      FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
-    )
-  `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bills (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL,
+        total_amount REAL NOT NULL,
+        supplier_id INTEGER,
+        FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+      )
+    `);
 
-  // Migration: Add supplier_id to bills if it doesn't exist
-  try {
-    db.exec(`ALTER TABLE bills ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id)`);
-  } catch (error) {
-    // Column already exists
-  }
+    // Safe migration: Add supplier_id if missing
+    addColumnIfNotExists('bills', 'supplier_id INTEGER');
 
-  // Table 9: suppliers - stores staff/waiters who attend orders
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS suppliers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      is_active INTEGER DEFAULT 1,
-      is_deleted INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+    // Table 3: suppliers - stores staff/waiters who attend orders
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS suppliers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        is_active INTEGER DEFAULT 1,
+        is_deleted INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  // Migration: Add is_deleted to suppliers if it doesn't exist
-  try {
-    db.exec(`ALTER TABLE suppliers ADD COLUMN is_deleted INTEGER DEFAULT 0`);
-  } catch (error) {
-    // Column already exists
-  }
+    // Safe migration: Add is_deleted if missing
+    addColumnIfNotExists('suppliers', 'is_deleted INTEGER DEFAULT 0');
+    addColumnIfNotExists('suppliers', 'is_active INTEGER DEFAULT 1');
 
-  // Table 3: bill_items - stores items in each bill
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS bill_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      bill_id INTEGER NOT NULL,
-      item_id INTEGER NOT NULL,
-      quantity INTEGER NOT NULL,
-      rate REAL NOT NULL,
-      FOREIGN KEY (bill_id) REFERENCES bills(id),
-      FOREIGN KEY (item_id) REFERENCES items(id)
-    )
-  `);
+    // Table 4: bill_items - stores items in each bill
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bill_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bill_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        quantity INTEGER NOT NULL,
+        rate REAL NOT NULL,
+        FOREIGN KEY (bill_id) REFERENCES bills(id),
+        FOREIGN KEY (item_id) REFERENCES items(id)
+      )
+    `);
 
-  // Table 4: expenses - stores daily expenses
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS expenses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      expense_date TEXT NOT NULL,
-      description TEXT NOT NULL,
-      amount REAL NOT NULL
-    )
-  `);
+    // Table 5: expenses - stores daily expenses
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        expense_date TEXT NOT NULL,
+        description TEXT NOT NULL,
+        amount REAL NOT NULL
+      )
+    `);
 
-  // Table 5: credit_customers - stores customers who buy on credit
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS credit_customers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      phone TEXT
-    )
-  `);
+    // Table 6: credit_customers - stores customers who buy on credit
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS credit_customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT
+      )
+    `);
 
-  // Table 6: credit_bills - links bills to credit customers
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS credit_bills (
-      bill_id INTEGER PRIMARY KEY,
-      customer_id INTEGER NOT NULL,
-      FOREIGN KEY (bill_id) REFERENCES bills(id),
-      FOREIGN KEY (customer_id) REFERENCES credit_customers(id)
-    )
-  `);
+    // Table 7: credit_bills - links bills to credit customers
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS credit_bills (
+        bill_id INTEGER PRIMARY KEY,
+        customer_id INTEGER NOT NULL,
+        FOREIGN KEY (bill_id) REFERENCES bills(id),
+        FOREIGN KEY (customer_id) REFERENCES credit_customers(id)
+      )
+    `);
 
-  // Table 7: credit_payments - stores payments made by credit customers
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS credit_payments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      customer_id INTEGER NOT NULL,
-      date TEXT NOT NULL,
-      amount REAL NOT NULL,
-      FOREIGN KEY (customer_id) REFERENCES credit_customers(id)
-    )
-  `);
+    // Table 8: credit_payments - stores payments made by credit customers
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS credit_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        amount REAL NOT NULL,
+        FOREIGN KEY (customer_id) REFERENCES credit_customers(id)
+      )
+    `);
 
-  // Table 8: categories - stores food item categories
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS categories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+    // Table 9: categories - stores food item categories
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  // Add default categories if table is empty
-  const categoryCount = db.prepare('SELECT COUNT(*) as count FROM categories').get();
-  if (categoryCount.count === 0) {
-    console.log('📝 Adding default categories...');
-    const defaultCategories = ['Tiffin', 'Dosa', 'Parotta', 'Gravy', 'Chinese', 'Other'];
-    const insertCategory = db.prepare('INSERT INTO categories (name) VALUES (?)');
-    for (const cat of defaultCategories) {
-      insertCategory.run(cat);
+    // Add default categories if table is empty
+    const categoryCount = db.prepare('SELECT COUNT(*) as count FROM categories').get();
+    if (categoryCount.count === 0) {
+      console.log('📝 Adding default categories...');
+      const defaultCategories = ['Tiffin', 'Dosa', 'Parotta', 'Gravy', 'Chinese', 'Other'];
+      const insertCategory = db.prepare('INSERT INTO categories (name) VALUES (?)');
+      for (const cat of defaultCategories) {
+        insertCategory.run(cat);
+      }
     }
-  }
 
   // Add some sample food items if the database is empty
   const count = db.prepare('SELECT COUNT(*) as count FROM items').get();
@@ -173,6 +197,11 @@ function initializeDatabase() {
   }
 
   console.log('✅ Database initialized successfully!');
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error.message);
+    console.error('Full error:', error);
+    throw error; // Re-throw to prevent app from running with broken DB
+  }
 }
 
 /**
