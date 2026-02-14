@@ -125,9 +125,54 @@
 }
 
 .new-bill-btn:hover,
-.payment-btn:hover {
+.payment-btn:hover,
+.settle-btn:hover {
     filter: brightness(0.9);
     transform: translateY(-2px);
+}
+
+.settle-btn {
+    flex: 1;
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 16px;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.settle-btn:disabled {
+    background-color: #cbd5e1;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.amount-input-wrapper {
+    display: flex;
+    gap: 10px;
+}
+
+.amount-input-wrapper input {
+    flex: 1;
+}
+
+.settle-shortcut-btn {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0 15px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+}
+
+.settle-shortcut-btn:hover {
+    background-color: #2563eb;
 }
 
 .transactions-grid {

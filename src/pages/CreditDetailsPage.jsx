@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import PageHeader from '../components/PageHeader';
 import Footer from '../components/Footer';
 import Toast from '../components/Toast';
+import PaymentSuccessModal from '../components/PaymentSuccessModal';
 import './CreditDetailsPage.css';
 
 /**
@@ -15,6 +16,8 @@ function CreditDetailsPage({ onNavigate, customerId }) {
     const [showPaymentForm, setShowPaymentForm] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
+    const [lastPaymentAmount, setLastPaymentAmount] = useState(0);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [toast, setToast] = useState(null);
     const getTodayLocalDate = () => {
         const now = new Date();
@@ -71,8 +74,10 @@ function CreditDetailsPage({ onNavigate, customerId }) {
 
         try {
             await window.electronAPI.addCreditPayment(customerId, amount, paymentDate);
+            setLastPaymentAmount(amount);
             setPaymentAmount('');
             setShowPaymentForm(false);
+            setShowSuccessModal(true);
             loadCustomerDetails();
         } catch (error) {
             console.error('Error adding payment:', error);
@@ -141,7 +146,17 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                         className="payment-btn"
                         onClick={() => setShowPaymentForm(true)}
                     >
-                        <i className="fa-solid fa-wallet"></i> Add Payment / Settlement
+                        <i className="fa-solid fa-wallet"></i> Add Payment
+                    </button>
+                    <button
+                        className="settle-btn"
+                        onClick={() => {
+                            setPaymentAmount(customer.balance.toString());
+                            setShowPaymentForm(true);
+                        }}
+                        disabled={customer.balance <= 0}
+                    >
+                        <i className="fa-solid fa-check-double"></i> Full Settlement
                     </button>
                 </div>
 
@@ -229,14 +244,23 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                         <form onSubmit={handleAddPayment}>
                             <div className="form-group">
                                 <label>Amount (₹) *</label>
-                                <input
-                                    type="number"
-                                    required
-                                    value={paymentAmount}
-                                    onChange={(e) => setPaymentAmount(e.target.value)}
-                                    placeholder="Enter amount paid"
-                                    autoFocus
-                                />
+                                <div className="amount-input-wrapper">
+                                    <input
+                                        type="number"
+                                        required
+                                        value={paymentAmount}
+                                        onChange={(e) => setPaymentAmount(e.target.value)}
+                                        placeholder="Enter amount paid"
+                                        autoFocus
+                                    />
+                                    <button 
+                                        type="button" 
+                                        className="settle-shortcut-btn"
+                                        onClick={() => setPaymentAmount(customer.balance.toString())}
+                                    >
+                                        Full Balance
+                                    </button>
+                                </div>
                             </div>
                             <div className="form-group">
                                 <label>Payment Date</label>
@@ -330,6 +354,14 @@ function CreditDetailsPage({ onNavigate, customerId }) {
             )}
             
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            
+            {showSuccessModal && (
+                <PaymentSuccessModal 
+                    amount={lastPaymentAmount}
+                    customerName={customer.name}
+                    onClose={() => setShowSuccessModal(false)}
+                />
+            )}
             
             <Footer />
         </div>

@@ -917,8 +917,25 @@ function addCategory(name) {
  * Used by: Admin Page
  */
 function updateCategory(id, name) {
-  const stmt = db.prepare('UPDATE categories SET name = ? WHERE id = ?');
-  stmt.run(name, id);
+  const transaction = db.transaction((id, newName) => {
+    // 1. Get the old name first
+    const oldCategory = db.prepare('SELECT name FROM categories WHERE id = ?').get(id);
+    if (!oldCategory) return;
+
+    // 2. Update all items using the old category name
+    const updateItemsStmt = db.prepare(`
+      UPDATE items 
+      SET category = ? 
+      WHERE category = ?
+    `);
+    updateItemsStmt.run(newName, oldCategory.name);
+
+    // 3. Update the category name in categories table
+    const updateCatStmt = db.prepare('UPDATE categories SET name = ? WHERE id = ?');
+    updateCatStmt.run(newName, id);
+  });
+
+  transaction(id, name);
 }
 
 /**
@@ -927,17 +944,21 @@ function updateCategory(id, name) {
  * Note: Items with this category will be set to 'Other'
  */
 function deleteCategory(id) {
-  // First, update all items with this category to 'Other'
-  const updateStmt = db.prepare(`
-    UPDATE items 
-    SET category = 'Other' 
-    WHERE category = (SELECT name FROM categories WHERE id = ?)
-  `);
-  updateStmt.run(id);
+  const transaction = (id) => {
+    // First, update all items with this category to 'Other'
+    const updateStmt = db.prepare(`
+      UPDATE items 
+      SET category = 'Other' 
+      WHERE category = (SELECT name FROM categories WHERE id = ?)
+    `);
+    updateStmt.run(id);
+    
+    // Then delete the category
+    const deleteStmt = db.prepare('DELETE FROM categories WHERE id = ?');
+    deleteStmt.run(id);
+  };
   
-  // Then delete the category
-  const deleteStmt = db.prepare('DELETE FROM categories WHERE id = ?');
-  deleteStmt.run(id);
+  db.transaction(transaction)(id);
 }
 
 

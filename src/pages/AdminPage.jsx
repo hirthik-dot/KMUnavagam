@@ -27,7 +27,7 @@ function AdminPage({ onNavigate }) {
         nameTamil: '',
         nameEnglish: '',
         price: '',
-        category: 'Breakfast',
+        category: 'Other',
         imagePath: '',
     });
 
@@ -301,7 +301,7 @@ function AdminPage({ onNavigate }) {
                 nameTamil: '',
                 nameEnglish: '',
                 price: '',
-                category: 'Breakfast',
+                category: 'Other',
                 imagePath: '',
             });
 
@@ -322,7 +322,7 @@ function AdminPage({ onNavigate }) {
             nameTamil: item.name_tamil,
             nameEnglish: item.name_english,
             price: item.price.toString(),
-            category: item.category || 'Breakfast',
+            category: item.category || 'Other',
             imagePath: item.image_path || '',
         });
         // Scroll to top
@@ -338,7 +338,7 @@ function AdminPage({ onNavigate }) {
             nameTamil: '',
             nameEnglish: '',
             price: '',
-            category: 'Breakfast',
+            category: 'Other',
             imagePath: '',
         });
     }
