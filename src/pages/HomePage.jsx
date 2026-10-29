@@ -13,18 +13,19 @@ function HomePage({ onNavigate }) {
     const [stats, setStats] = useState({
         cashSales: 0,
         creditSales: 0,
+        totalSales: 0,
         totalExpenses: 0
     });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         loadTodayStats();
-        
+
         // Live Clock Timer
         const timer = setInterval(() => {
             setCurrentTime(new Date());
         }, 1000);
-        
+
         return () => clearInterval(timer);
     }, []);
 
@@ -32,11 +33,12 @@ function HomePage({ onNavigate }) {
         try {
             setLoading(true);
             const data = await window.electronAPI.getTodayStats();
-            
+
             if (data) {
                 setStats({
                     cashSales: data.cashSales || 0,
                     creditSales: data.creditSales || 0,
+                    totalSales: data.totalSales || 0,
                     totalExpenses: data.totalExpenses || 0
                 });
             }
@@ -61,44 +63,51 @@ function HomePage({ onNavigate }) {
                             <span className="hotel-detail-item"><i className="fas fa-phone"></i> Ph: 8680031372</span>
                         </div>
                     </div>
-                    
+
                     <div className="home-live-datetime">
                         <div className="live-time-wrapper">
                             <span className="live-time">
-                                {currentTime.toLocaleTimeString('en-IN', { 
-                                    hour: '2-digit', 
-                                    minute: '2-digit', 
+                                {currentTime.toLocaleTimeString('en-IN', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
                                     second: '2-digit',
-                                    hour12: true 
+                                    hour12: true
                                 })}
                             </span>
                         </div>
                         <div className="live-date">
-                            {currentTime.toLocaleDateString('en-IN', { 
-                                weekday: 'long', 
-                                year: 'numeric', 
-                                month: 'long', 
-                                day: 'numeric' 
+                            {currentTime.toLocaleDateString('en-IN', {
+                                weekday: 'long',
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
                             })}
                         </div>
                     </div>
                 </div>
                 {/* Stats Cards */}
                 <div className="home-stats">
+                    <div className="stat-card stat-total">
+                        <div className="stat-label">Total Sales</div>
+                        <div className="stat-value">
+                            {loading ? '...' : `₹${stats.totalSales}`}
+                        </div>
+                    </div>
+
                     <div className="stat-card stat-cash">
                         <div className="stat-label">Cash Sales</div>
                         <div className="stat-value">
                             {loading ? '...' : `₹${stats.cashSales}`}
                         </div>
                     </div>
-                    
+
                     <div className="stat-card stat-credit">
                         <div className="stat-label">Credit Sales</div>
                         <div className="stat-value">
                             {loading ? '...' : `₹${stats.creditSales}`}
                         </div>
                     </div>
-                    
+
                     <div className="stat-card stat-expenses">
                         <div className="stat-label">Total Expenses</div>
                         <div className="stat-value">
@@ -126,19 +135,28 @@ function HomePage({ onNavigate }) {
                     </button>
 
                     <button
+                        className="home-btn home-btn-credits"
+                        onClick={() => onNavigate('credits')}
+                    >
+                        <span className="btn-icon"><i className="fas fa-handshake"></i></span>
+                        <span className="btn-text">Customer Credits</span>
+                    </button>
+
+                    <button
+                        className="home-btn home-btn-staff"
+                        onClick={() => onNavigate('staff')}
+                        style={{ background: '#10b981', color: 'white' }}
+                    >
+                        <span className="btn-icon"><i className="fas fa-users-cog"></i></span>
+                        <span className="btn-text">Staff Maintenance</span>
+                    </button>
+
+                    <button
                         className="home-btn home-btn-expenses"
                         onClick={() => onNavigate('expenses')}
                     >
                         <span className="btn-icon"><i className="fas fa-wallet"></i></span>
                         <span className="btn-text">Expenses</span>
-                    </button>
-
-                    <button
-                        className="home-btn home-btn-credits"
-                        onClick={() => onNavigate('credits')}
-                    >
-                        <span className="btn-icon"><i className="fas fa-handshake"></i></span>
-                        <span className="btn-text">Credits</span>
                     </button>
 
                     <button
@@ -150,7 +168,7 @@ function HomePage({ onNavigate }) {
                     </button>
                 </div>
             </div>
-            
+
             <Footer />
         </div>
     );

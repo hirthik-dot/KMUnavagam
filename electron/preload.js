@@ -33,12 +33,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ========== BILLS ==========
 
     // Save a bill to database
-    saveBill: (items, totalAmount, customerId, supplierId) =>
-        ipcRenderer.invoke('db:saveBill', items, totalAmount, customerId, supplierId),
+    saveBill: (items, totalAmount, customerId, supplierId, customDate) =>
+        ipcRenderer.invoke('db:saveBill', items, totalAmount, customerId, supplierId, customDate),
 
     // Update an existing bill
-    updateBill: (billId, items, totalAmount, supplierId) =>
-        ipcRenderer.invoke('db:updateBill', billId, items, totalAmount, supplierId),
+    updateBill: (billId, items, totalAmount, supplierId, customDate) =>
+        ipcRenderer.invoke('db:updateBill', billId, items, totalAmount, supplierId, customDate),
+
+    // Delete a bill
+    deleteBill: (billId) =>
+        ipcRenderer.invoke('db:deleteBill', billId),
 
     // Get bill history
     getBillHistory: (limit) =>
@@ -73,8 +77,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('db:addExpense', description, amount, expenseDate),
 
     // Update expense
-    updateExpense: (expenseId, description, amount) =>
-        ipcRenderer.invoke('db:updateExpense', expenseId, description, amount),
+    updateExpense: (expenseId, description, amount, date) =>
+        ipcRenderer.invoke('db:updateExpense', expenseId, description, amount, date),
 
     // Delete expense
     deleteExpense: (expenseId) =>
@@ -128,6 +132,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteCreditCustomer: (id) =>
         ipcRenderer.invoke('db:deleteCreditCustomer', id),
 
+    // Get bills by date range for summary
+    getBillsByDateRange: (customerId, startDate, endDate) =>
+        ipcRenderer.invoke('db:getBillsByDateRange', customerId, startDate, endDate),
+
+    // Print credit summary bill
+    printCreditSummary: (data) =>
+        ipcRenderer.invoke('print:creditSummary', data),
+
+    // ========== VENDOR SYSTEM ==========
+    getAllVendors: () => ipcRenderer.invoke('db:getAllVendors'),
+    addVendor: (name, phone) => ipcRenderer.invoke('db:addVendor', name, phone),
+    addVendorTransaction: (vendorId, amount, type, description, date) =>
+        ipcRenderer.invoke('db:addVendorTransaction', vendorId, amount, type, description, date),
+    getVendorDetails: (vendorId) => ipcRenderer.invoke('db:getVendorDetails', vendorId),
+    deleteVendor: (id) => ipcRenderer.invoke('db:deleteVendor', id),
+    updateVendorTransaction: (id, amount, description, date) =>
+        ipcRenderer.invoke('db:updateVendorTransaction', id, amount, description, date),
+    deleteVendorTransaction: (transactionId) => ipcRenderer.invoke('db:deleteVendorTransaction', transactionId),
+
     // ========== CATEGORIES ==========
 
     // Get all categories
@@ -156,13 +179,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAllSuppliersAdmin: () =>
         ipcRenderer.invoke('db:getAllSuppliersAdmin'),
 
-    // Add a new supplier
-    addSupplier: (name) =>
-        ipcRenderer.invoke('db:addSupplier', name),
+    // Add a new supplier (staff)
+    addSupplier: (name, dailyWage) =>
+        ipcRenderer.invoke('db:addSupplier', name, dailyWage),
 
-    // Update supplier
-    updateSupplier: (id, name, isActive) =>
-        ipcRenderer.invoke('db:updateSupplier', id, name, isActive),
+    // Update supplier (staff)
+    updateSupplier: (id, name, dailyWage, isActive) =>
+        ipcRenderer.invoke('db:updateSupplier', id, name, dailyWage, isActive),
 
     // Delete supplier
     deleteSupplier: (id) =>
@@ -171,6 +194,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Get supplier-wise sales
     getSupplierWiseSales: (startDate, endDate, supplierId) =>
         ipcRenderer.invoke('db:getSupplierWiseSales', startDate, endDate, supplierId),
+
+    // ========== STAFF MAINTENANCE ==========
+    getStaffList: (includeInactive) => ipcRenderer.invoke('db:getStaffList', includeInactive),
+    getStaffDetails: (staffId) => ipcRenderer.invoke('db:getStaffDetails', staffId),
+    addEmployee: (name, dailyWage) => ipcRenderer.invoke('db:addEmployee', name, dailyWage),
+    updateEmployee: (id, name, dailyWage, isActive) => ipcRenderer.invoke('db:updateEmployee', id, name, dailyWage, isActive),
+    deleteEmployee: (id) => ipcRenderer.invoke('db:deleteEmployee', id),
+    addStaffTransaction: (staffId, amount, type, description, date) =>
+        ipcRenderer.invoke('db:addStaffTransaction', staffId, amount, type, description, date),
+    updateStaffTransaction: (id, amount, description, date) =>
+        ipcRenderer.invoke('db:updateStaffTransaction', id, amount, description, date),
+    deleteStaffTransaction: (transactionId) => ipcRenderer.invoke('db:deleteStaffTransaction', transactionId),
 
     // ========== SYSTEM ==========
     backupDatabase: () =>

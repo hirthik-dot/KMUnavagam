@@ -1,18 +1,20 @@
 // database.js - SQLite Database Handler
 // This file manages all database operations for the hotel billing app
 
-const Database = require('better-sqlite3');
-const path = require('path');
-const { app } = require('electron');
-const fs = require('fs');
+const Database = require("better-sqlite3");
+const path = require("path");
+const { app } = require("electron");
+const fs = require("fs");
+const dbSafety = require("./dbSafety");
+const logger = require("./logger");
 
 // Get the path where we'll store the database
 // For development: inside the project folder
 // For production: inside the user's AppData folder
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.env.NODE_ENV === "development";
 const dbPath = isDev
-  ? path.join(__dirname, '..', 'database', 'hotel.db')
-  : path.join(app.getPath('userData'), 'database', 'hotel.db');
+  ? path.join(__dirname, "..", "database", "hotel.db")
+  : path.join(app.getPath("userData"), "database", "hotel.db");
 
 // Make sure the database folder exists
 const dbDir = path.dirname(dbPath);
@@ -20,57 +22,154 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-console.log('📁 Database location:', dbPath);
+// Backup directory definition
+const backupDir = isDev
+  ? path.join(__dirname, "..", "backups")
+  : path.join(app.getPath("userData"), "backups");
 
-// Open the database connection
-const db = new Database(dbPath);
+// The DB instance
+let db = null;
 
-// Enable foreign keys for data integrity
-db.pragma('foreign_keys = ON');
+// FIX A: At top of database.js, after let db = null;, add global runtime guard
+function assertDbReady() {
+  if (!db) {
+    throw new Error("Database accessed before initialization");
+  }
+}
+
+/**
+ * Guard: Strictly prevent usage before initialization
+ */
+function ensureDb() {
+  assertDbReady(); // Call assertDbReady() inside ensureDb() before returning
+  return db;
+}
+
+/**
+ * Validate and round monetary values before writing to DB.
+ * Rejects NaN, Infinity, and negative values.
+ * Rounds to 2 decimal places to prevent float drift.
+ */
+function validateAndRound(val, fieldName) {
+  const num = Number(val);
+  if (!Number.isFinite(num) || num < 0) {
+    throw new Error(`Invalid numeric value for ${fieldName}: ${val}`);
+  }
+  return Math.round(num * 100) / 100;
+}
 
 /**
  * Helper: Get table structure info
  * Uses PRAGMA table_info() to safely check existing columns
  */
 function getTableColumns(tableName) {
+  const database = ensureDb();
   try {
-    const stmt = db.prepare(`PRAGMA table_info(${tableName})`);
-    return stmt.all().map(col => col.name);
+    const stmt = database.prepare(`PRAGMA table_info(${tableName})`);
+    return stmt.all().map((col) => col.name);
   } catch (error) {
     return [];
   }
 }
 
 /**
- * Helper: Safely add column if it doesn't exist
- * Prevents "column already exists" errors
- */
-function addColumnIfNotExists(tableName, columnDef) {
-  try {
-    const columns = getTableColumns(tableName);
-    const columnName = columnDef.split(' ')[0];
-    
-    if (!columns.includes(columnName)) {
-      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnDef}`);
-      console.log(`✅ Added column: ${tableName}.${columnName}`);
-    }
-  } catch (error) {
-    console.warn(`⚠️  Failed to add column to ${tableName}:`, error.message);
-  }
-}
-
-/**
  * Initialize the database - create tables if they don't exist
- * This runs when the app starts for the first time
- * Uses PRAGMA table_info() for safe migrations
+ * This runs when the app starts.
  */
-function initializeDatabase() {
-  console.log('🔧 Initializing database...');
+async function initializeDatabase() {
+  logger.log("🔧 Starting deterministic DB initialization...", "INFO");
 
   try {
-    // Table 1: items - stores all food items
-    // FIXED: Removed duplicate category column definition
-    db.exec(`
+    logger.log(`📁 Database location: ${dbPath}`, "INFO");
+
+    // 1. Create SQLite connection (db instance)
+    db = new Database(dbPath);
+
+    // CRITICAL: Verify DB integrity before proceeding.
+    // Prevents a silently corrupted DB from contaminating backups.
+    const integrity = db.pragma('integrity_check');
+    if (!Array.isArray(integrity) || integrity[0].integrity_check !== 'ok') {
+      throw new Error('Database integrity check failed on startup. Refusing to start.');
+    }
+    logger.log('[DB] Integrity check passed ✅', 'INFO');
+
+    // 2. Enable WAL + synchronous FULL (immediate safety) — will throw if it fails
+    dbSafety.enableWAL(db);
+
+    // Proceed with table initialization...
+    logger.log("🔧 Initializing tables...", "INFO");
+
+    /**
+     * Helper: Safely add column if it doesn't exist
+     * Prevents "column already exists" errors
+     */
+    function addColumnIfNotExists(tableName, columnDef) {
+      try {
+        const columns = getTableColumns(tableName);
+        const columnName = columnDef.split(" ")[0];
+
+        if (!columns.includes(columnName)) {
+          ensureDb().exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnDef}`);
+          console.log(`✅ Added column: ${tableName}.${columnName}`);
+        }
+      } catch (error) {
+        console.warn(
+          `⚠️  Failed to add column to ${tableName}:`,
+          error.message,
+        );
+      }
+    }
+
+    /**
+     * FIX C — Add Logical Schema Integrity Check
+     * Verifies existence of required tables.
+     */
+    function verifyRequiredSchema() {
+      const database = ensureDb();
+
+      const requiredTables = [
+        "items",
+        "bills",
+        "bill_items",
+        "expenses",
+        "credit_customers",
+        "credit_bills",
+        "credit_payments",
+        "categories",
+        "suppliers",
+        "employees",
+        "employee_transactions",
+        "vendors",
+        "vendor_transactions"
+      ];
+
+      for (const table of requiredTables) {
+        const exists = database
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+          )
+          .get(table);
+
+        if (!exists) {
+          throw new Error(`CRITICAL: Missing required table: ${table}`);
+        }
+      }
+    }
+
+    /**
+     * Initialize the database - create tables if they don't exist
+     * This runs when the app starts for the first time
+     * Uses PRAGMA table_info() for safe migrations
+     */
+    async function initializeDatabaseTablesAndData() {
+      // Renamed to avoid conflict with outer function
+      logger.log("🔧 Initializing database...", "INFO");
+
+      try {
+        // ... (omitting table creation for brevity)
+        // Table 1: items - stores all food items
+        // FIXED: Removed duplicate category column definition
+        ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name_tamil TEXT NOT NULL,
@@ -82,13 +181,13 @@ function initializeDatabase() {
       )
     `);
 
-    // Safe migration: Ensure critical columns exist
-    addColumnIfNotExists('items', 'category TEXT DEFAULT \'Other\'');
-    addColumnIfNotExists('items', 'image_path TEXT');
-    addColumnIfNotExists('items', 'is_active INTEGER DEFAULT 1');
+        // Safe migration: Ensure critical columns exist
+        addColumnIfNotExists("items", "category TEXT DEFAULT 'Other'");
+        addColumnIfNotExists("items", "image_path TEXT");
+        addColumnIfNotExists("items", "is_active INTEGER DEFAULT 1");
 
-  // Table 2: bills - stores bill information
-    db.exec(`
+        // Table 2: bills - stores bill information
+        ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS bills (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         created_at TEXT NOT NULL,
@@ -98,11 +197,11 @@ function initializeDatabase() {
       )
     `);
 
-    // Safe migration: Add supplier_id if missing
-    addColumnIfNotExists('bills', 'supplier_id INTEGER');
+        // Safe migration: Add supplier_id if missing
+        addColumnIfNotExists("bills", "supplier_id INTEGER");
 
-    // Table 3: suppliers - stores staff/waiters who attend orders
-    db.exec(`
+        // Table 3: suppliers - stores staff/waiters who attend orders
+        ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS suppliers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
@@ -112,12 +211,13 @@ function initializeDatabase() {
       )
     `);
 
-    // Safe migration: Add is_deleted if missing
-    addColumnIfNotExists('suppliers', 'is_deleted INTEGER DEFAULT 0');
-    addColumnIfNotExists('suppliers', 'is_active INTEGER DEFAULT 1');
+        // Safe migration: Add is_deleted if missing
+        addColumnIfNotExists("suppliers", "is_deleted INTEGER DEFAULT 0");
+        addColumnIfNotExists("suppliers", "is_active INTEGER DEFAULT 1");
+        addColumnIfNotExists("suppliers", "daily_wage REAL DEFAULT 0");
 
-    // Table 4: bill_items - stores items in each bill
-    db.exec(`
+        // Table 4: bill_items - stores items in each bill
+        ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS bill_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         bill_id INTEGER NOT NULL,
@@ -129,8 +229,8 @@ function initializeDatabase() {
       )
     `);
 
-    // Table 5: expenses - stores daily expenses
-    db.exec(`
+        // Table 5: expenses - stores daily expenses
+        ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         expense_date TEXT NOT NULL,
@@ -139,17 +239,21 @@ function initializeDatabase() {
       )
     `);
 
-    // Table 6: credit_customers - stores customers who buy on credit
-    db.exec(`
+        // Table 6: credit_customers - stores customers who buy on credit
+        ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS credit_customers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        phone TEXT
+        phone TEXT,
+        is_deleted INTEGER DEFAULT 0
       )
     `);
 
-    // Table 7: credit_bills - links bills to credit customers
-    db.exec(`
+        // Safe migration: Add is_deleted if missing
+        addColumnIfNotExists("credit_customers", "is_deleted INTEGER DEFAULT 0");
+
+        // Table 7: credit_bills - links bills to credit customers
+        ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS credit_bills (
         bill_id INTEGER PRIMARY KEY,
         customer_id INTEGER NOT NULL,
@@ -158,8 +262,8 @@ function initializeDatabase() {
       )
     `);
 
-    // Table 8: credit_payments - stores payments made by credit customers
-    db.exec(`
+        // Table 8: credit_payments - stores payments made by credit customers
+        ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS credit_payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         customer_id INTEGER NOT NULL,
@@ -169,8 +273,8 @@ function initializeDatabase() {
       )
     `);
 
-    // Table 9: categories - stores food item categories
-    db.exec(`
+        // Table 9: categories - stores food item categories
+        ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
@@ -178,59 +282,262 @@ function initializeDatabase() {
       )
     `);
 
-    // Add default categories if table is empty
-    const categoryCount = db.prepare('SELECT COUNT(*) as count FROM categories').get();
-    if (categoryCount.count === 0) {
-      console.log('📝 Adding default categories...');
-      const defaultCategories = ['Tiffin', 'Dosa', 'Parotta', 'Gravy', 'Chinese', 'Other'];
-      const insertCategory = db.prepare('INSERT INTO categories (name) VALUES (?)');
-      for (const cat of defaultCategories) {
-        insertCategory.run(cat);
+        // Table 10: vendors - stores shops/vendors for credit
+        ensureDb().exec(`
+      CREATE TABLE IF NOT EXISTS vendors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        phone TEXT,
+        is_active INTEGER DEFAULT 1,
+        is_deleted INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+        // Safe migration: Add is_deleted and is_active if missing
+        addColumnIfNotExists("vendors", "is_deleted INTEGER DEFAULT 0");
+        addColumnIfNotExists("vendors", "is_active INTEGER DEFAULT 1");
+
+        // Table 11: vendor_transactions - stores credit taking and payments
+        ensureDb().exec(`
+      CREATE TABLE IF NOT EXISTS vendor_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vendor_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        transaction_date TEXT NOT NULL,
+        type TEXT NOT NULL, -- 'CREDIT' (debt) or 'PAYMENT' (repayment)
+        description TEXT,
+        expense_id INTEGER, -- Link to expenses table if it's a payment
+        FOREIGN KEY (vendor_id) REFERENCES vendors(id),
+        FOREIGN KEY (expense_id) REFERENCES expenses(id)
+      )
+    `);
+
+      // Table 12: employee_transactions - stores wages and payments for employees
+      ensureDb().exec(`
+      CREATE TABLE IF NOT EXISTS employee_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        transaction_date TEXT NOT NULL,
+        type TEXT NOT NULL, -- 'WAGE' (earned) or 'PAYMENT' (given)
+        description TEXT,
+        expense_id INTEGER, -- Link to expenses table if it's a payment
+        FOREIGN KEY (employee_id) REFERENCES employees(id),
+        FOREIGN KEY (expense_id) REFERENCES expenses(id)
+      )
+    `);
+
+      // Table 13: employees - stores staff members (cleaning, cooking, etc.)
+      ensureDb().exec(`
+      CREATE TABLE IF NOT EXISTS employees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        is_active INTEGER DEFAULT 1,
+        is_deleted INTEGER DEFAULT 0,
+        daily_wage REAL DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+      // Safe migration for employees
+      addColumnIfNotExists("employees", "is_deleted INTEGER DEFAULT 0");
+      addColumnIfNotExists("employees", "is_active INTEGER DEFAULT 1");
+      addColumnIfNotExists("employees", "daily_wage REAL DEFAULT 0");
+
+      // Table 14: staff_transactions (Legacy/Suppliers-related)
+      ensureDb().exec(`
+      CREATE TABLE IF NOT EXISTS staff_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        staff_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        transaction_date TEXT NOT NULL,
+        type TEXT NOT NULL, -- 'WAGE' (earned) or 'PAYMENT' (given)
+        description TEXT,
+        expense_id INTEGER, -- Link to expenses table if it's a payment
+        FOREIGN KEY (staff_id) REFERENCES suppliers(id),
+        FOREIGN KEY (expense_id) REFERENCES expenses(id)
+      )
+    `);
+
+        // PERFORMANCE: Index on DATE(created_at) prevents full-table scans
+        // on all date-range queries (getDailyRecords, getBillsByDate, getTodayStats).
+        // This becomes critical after ~50,000 bills.
+        ensureDb().exec(`
+          CREATE INDEX IF NOT EXISTS idx_bills_date ON bills (DATE(created_at))
+        `);
+
+        // Add default categories if table is empty
+        const categoryCount = ensureDb()
+          .prepare("SELECT COUNT(*) as count FROM categories")
+          .get();
+        if (categoryCount.count === 0) {
+          console.log("📝 Adding default categories...");
+          const defaultCategories = [
+            "Tiffin",
+            "Dosa",
+            "Parotta",
+            "Gravy",
+            "Chinese",
+            "Other",
+          ];
+          const insertCategory = ensureDb().prepare(
+            "INSERT INTO categories (name) VALUES (?)",
+          );
+          for (const cat of defaultCategories) {
+            insertCategory.run(cat);
+          }
+        }
+
+        // FIX C: Verify schema before migrations/operations
+        verifyRequiredSchema();
+
+        // Migrate legacy categories to new ones
+        logger.log("🔄 Checking for legacy categories...", "INFO");
+        migrateLegacyCategories();
+
+        // Add some sample food items if the database is empty
+        const count = ensureDb()
+          .prepare("SELECT COUNT(*) as count FROM items")
+          .get();
+        if (count.count === 0) {
+          logger.log("📝 Adding sample food items...", "INFO");
+          addSampleItems();
+        }
+
+        logger.log("✅ Database initialized successfully!", "INFO");
+
+        // FEATURE 2D: STARTUP & FIRST-DAY PROTECTION
+        // 1. Initial daily snapshot (idempotent, ensures we have history even if app crashed yesterday)
+        await dbSafety.createDailySnapshot(db, dbPath, backupDir);
+
+        // 2. Ensure basic backups exist
+        await dbSafety.ensureFirstDayBackups(db, dbPath, backupDir);
+      } catch (error) {
+        logger.log(
+          `❌ Database initialization failed: ${error.message}`,
+          "ERROR",
+        );
+        logger.log(error, "ERROR");
+        throw error; // Re-throw to prevent app from running with broken DB
       }
     }
 
-  // Add some sample food items if the database is empty
-  const count = db.prepare('SELECT COUNT(*) as count FROM items').get();
-  if (count.count === 0) {
-    console.log('📝 Adding sample food items...');
-    addSampleItems();
-  }
+    /**
+     * Migrate legacy categories to new category system
+     * Maps old hardcoded categories to new database categories
+     */
+    function migrateLegacyCategories() {
+      try {
+        const database = ensureDb();
+        // Get all valid categories from the categories table
+        const validCategories = database
+          .prepare("SELECT name FROM categories")
+          .all()
+          .map((c) => c.name);
+        console.log("✅ Valid categories:", validCategories.join(", "));
 
-  console.log('✅ Database initialized successfully!');
-  } catch (error) {
-    console.error('❌ Database initialization failed:', error.message);
-    console.error('Full error:', error);
-    throw error; // Re-throw to prevent app from running with broken DB
-  }
-}
+        // Define mapping from old categories to new ones
+        const categoryMap = {
+          Breakfast: "Tiffin",
+          Lunch: "Other",
+          Dinner: "Parotta",
+        };
 
-/**
- * Add sample food items to the database
- * This helps you test the app immediately
- */
-function addSampleItems() {
-  const sampleItems = [
-    { tamil: 'தோசை', english: 'Dosa', price: 40, category: 'Breakfast' },
-    { tamil: 'இட்லி', english: 'Idly', price: 30, category: 'Breakfast' },
-    { tamil: 'வடை', english: 'Vada', price: 20, category: 'Breakfast' },
-    { tamil: 'பூரி', english: 'Poori', price: 35, category: 'Breakfast' },
-    { tamil: 'சப்பாத்தி', english: 'Chapathi', price: 35, category: 'Breakfast' },
-    { tamil: 'பொங்கல்', english: 'Pongal', price: 45, category: 'Breakfast' },
-    { tamil: 'உப்புமா', english: 'Upma', price: 30, category: 'Breakfast' },
-    { tamil: 'பரோட்டா', english: 'Parotta', price: 15, category: 'Dinner' },
-    { tamil: 'சாதம்', english: 'Rice', price: 50, category: 'Lunch' },
-    { tamil: 'சாம்பார்', english: 'Sambar', price: 20, category: 'Lunch' },
-    { tamil: 'ரசம்', english: 'Rasam', price: 15, category: 'Lunch' },
-    { tamil: 'தயிர்', english: 'Curd', price: 20, category: 'Lunch' },
-  ];
+        // Update items with mapped categories
+        let totalUpdated = 0;
+        for (const [oldCat, newCat] of Object.entries(categoryMap)) {
+          const result = database
+            .prepare("UPDATE items SET category = ? WHERE category = ?")
+            .run(newCat, oldCat);
+          if (result.changes > 0) {
+            console.log(
+              `  ✓ Migrated ${result.changes} items from '${oldCat}' to '${newCat}'`,
+            );
+            totalUpdated += result.changes;
+          }
+        }
 
-  const insert = db.prepare(`
+        // Set any remaining invalid categories to 'Other'
+        // FIX: Wrap in a single transaction — if app crashes mid-loop,
+        // all updates roll back atomically. Without this, partial migration is permanent.
+        const items = database.prepare("SELECT id, category FROM items").all();
+        let invalidCount = 0;
+        const updateInvalidCategory = database.prepare("UPDATE items SET category = ? WHERE id = ?");
+        database.transaction(() => {
+          for (const item of items) {
+            if (!validCategories.includes(item.category)) {
+              updateInvalidCategory.run("Other", item.id);
+              console.log(
+                `  ✓ Set invalid category '${item.category}' to 'Other' for item ID ${item.id}`,
+              );
+              invalidCount++;
+            }
+          }
+        })();
+
+        if (totalUpdated > 0 || invalidCount > 0) {
+          console.log(
+            `✅ Migration complete: ${totalUpdated + invalidCount} items updated`,
+          );
+        } else {
+          console.log("✅ No legacy categories found - all items up to date");
+        }
+      } catch (error) {
+        console.error("⚠️  Category migration failed:", error.message);
+      }
+    }
+
+    /**
+     * Add sample food items to the database
+     * This helps you test the app immediately
+     */
+    function addSampleItems() {
+      const sampleItems = [
+        { tamil: "தோசை", english: "Dosa", price: 40, category: "Dosa" },
+        { tamil: "இட்லி", english: "Idly", price: 30, category: "Tiffin" },
+        { tamil: "வடை", english: "Vada", price: 20, category: "Tiffin" },
+        { tamil: "பூரி", english: "Poori", price: 35, category: "Tiffin" },
+        {
+          tamil: "சப்பாத்தி",
+          english: "Chapathi",
+          price: 35,
+          category: "Tiffin",
+        },
+        { tamil: "பொங்கல்", english: "Pongal", price: 45, category: "Tiffin" },
+        { tamil: "உப்புமா", english: "Upma", price: 30, category: "Tiffin" },
+        {
+          tamil: "பரோட்டா",
+          english: "Parotta",
+          price: 15,
+          category: "Parotta",
+        },
+        { tamil: "சாதம்", english: "Rice", price: 50, category: "Other" },
+        { tamil: "சாம்பார்", english: "Sambar", price: 20, category: "Gravy" },
+        { tamil: "ரசம்", english: "Rasam", price: 15, category: "Gravy" },
+        { tamil: "தயிர்", english: "Curd", price: 20, category: "Other" },
+      ];
+
+      const insert = ensureDb().prepare(`
     INSERT INTO items (name_tamil, name_english, price, category, is_active)
     VALUES (?, ?, ?, ?, 1)
   `);
 
-  for (const item of sampleItems) {
-    insert.run(item.tamil, item.english, item.price, item.category);
+      for (const item of sampleItems) {
+        insert.run(item.tamil, item.english, item.price, item.category);
+      }
+    }
+
+    // Call the inner initialization function
+    await initializeDatabaseTablesAndData();
+  } catch (error) {
+    logger.log(
+      `❌ FATAL: Database initialization failed: ${error.message}`,
+      "ERROR",
+    );
+    logger.log(error.stack, "ERROR");
+    // Ensure the app exits if DB init fails
+    app.exit(1);
   }
 }
 
@@ -241,7 +548,9 @@ function addSampleItems() {
  * Used by: Billing Page to show food items
  */
 function getAllItems() {
-  const stmt = db.prepare('SELECT * FROM items WHERE is_active = 1 ORDER BY name_english');
+  const stmt = ensureDb().prepare(
+    "SELECT * FROM items WHERE is_active = 1 ORDER BY name_english",
+  );
   return stmt.all();
 }
 
@@ -250,16 +559,49 @@ function getAllItems() {
  * Used by: Admin Page to manage all items
  */
 function getAllItemsAdmin() {
-  const stmt = db.prepare('SELECT * FROM items ORDER BY name_english');
+  const stmt = ensureDb().prepare("SELECT * FROM items ORDER BY name_english");
   return stmt.all();
 }
 
 /**
  * Add a new food item
  * Used by: Admin Page when adding new items
+ * If an item with the same English name already exists (even if inactive/deleted),
+ * reactivate it with the new details instead of inserting a duplicate.
  */
-function addItem(nameTamil, nameEnglish, price, imagePath = null, category = 'Other') {
-  const stmt = db.prepare(`
+function addItem(
+  nameTamil,
+  nameEnglish,
+  price,
+  imagePath = null,
+  category = "Other",
+) {
+  const database = ensureDb();
+
+  // Check if an item with the same English name already exists (active or inactive)
+  const existing = database
+    .prepare("SELECT id, is_active FROM items WHERE LOWER(name_english) = LOWER(?)")
+    .get(nameEnglish);
+
+  if (existing) {
+    if (existing.is_active === 1) {
+      // Item is already active — don't allow duplicate
+      throw new Error(`An active item named "${nameEnglish}" already exists.`);
+    } else {
+      // Item was previously deleted (soft-deleted) — reactivate and update it
+      database
+        .prepare(`
+          UPDATE items
+          SET name_tamil = ?, price = ?, image_path = ?, category = ?, is_active = 1
+          WHERE id = ?
+        `)
+        .run(nameTamil, price, imagePath, category, existing.id);
+      return existing.id;
+    }
+  }
+
+  // No existing item — insert fresh
+  const stmt = database.prepare(`
     INSERT INTO items (name_tamil, name_english, price, image_path, category, is_active)
     VALUES (?, ?, ?, ?, ?, 1)
   `);
@@ -271,8 +613,15 @@ function addItem(nameTamil, nameEnglish, price, imagePath = null, category = 'Ot
  * Update an existing food item
  * Used by: Admin Page when editing items
  */
-function updateItem(id, nameTamil, nameEnglish, price, imagePath = null, category = 'Other') {
-  const stmt = db.prepare(`
+function updateItem(
+  id,
+  nameTamil,
+  nameEnglish,
+  price,
+  imagePath = null,
+  category = "Other",
+) {
+  const stmt = ensureDb().prepare(`
     UPDATE items 
     SET name_tamil = ?, name_english = ?, price = ?, image_path = ?, category = ?
     WHERE id = ?
@@ -285,85 +634,129 @@ function updateItem(id, nameTamil, nameEnglish, price, imagePath = null, categor
  * Used by: Admin Page to hide/show items
  */
 function toggleItemStatus(id, isActive) {
-  const stmt = db.prepare('UPDATE items SET is_active = ? WHERE id = ?');
+  const stmt = ensureDb().prepare(
+    "UPDATE items SET is_active = ? WHERE id = ?",
+  );
   stmt.run(isActive ? 1 : 0, id);
 }
 
 /**
  * Delete a food item
  * Used by: Admin Page to remove items
+ *
+ * If the item has NEVER been used in a bill, it is hard-deleted permanently.
+ * If it HAS been used in bills, it is soft-deleted (is_active = 0) to preserve
+ * financial history (getBillItems JOIN still works for past records).
  */
 function deleteItem(id) {
-  const stmt = db.prepare('DELETE FROM items WHERE id = ?');
-  stmt.run(id);
+  const database = ensureDb();
+
+  // Check if this item has ever been used in any bill
+  const usedInBill = database
+    .prepare("SELECT COUNT(*) as cnt FROM bill_items WHERE item_id = ?")
+    .get(id);
+
+  if (usedInBill && usedInBill.cnt > 0) {
+    // Item is referenced in bill history — soft delete to protect financial records
+    const result = database
+      .prepare("UPDATE items SET is_active = 0 WHERE id = ?")
+      .run(id);
+    return result.changes;
+  } else {
+    // Item has never been billed — safe to permanently delete
+    const result = database
+      .prepare("DELETE FROM items WHERE id = ?")
+      .run(id);
+    return result.changes;
+  }
+}
+
+/**
+ * Get the next likely bill ID (for preview purposes)
+ */
+function getNextBillId() {
+  try {
+    const database = ensureDb();
+    // Check sqlite_sequence for the last auto-increment value
+    const stmt = database.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'bills'");
+    const result = stmt.get();
+    
+    // If no bills yet, start at 1. Otherwise next is seq + 1
+    return result ? result.seq + 1 : 1;
+  } catch (error) {
+    console.error("Error getting next bill ID:", error);
+    return 1; // Fallback
+  }
 }
 
 /**
  * Save a new bill to the database
  * Used by: Billing Page when printing a bill
  */
-function saveBill(items, totalAmount, customerId = null, supplierId = null) {
-  console.log('--- Database: saveBill called ---');
-  console.log('Total Amount:', totalAmount);
-  console.log('Raw Customer ID Type:', typeof customerId);
-  console.log('Supplier ID:', supplierId);
+function saveBill(items, totalAmount, customerId = null, supplierId = null, customDate = null) {
+
+  // Validate monetary input — reject NaN, Infinity, negatives
+  totalAmount = validateAndRound(totalAmount, 'totalAmount');
 
   // Ensure IDs are integers if provided
   const targetCustomerId = customerId ? parseInt(customerId, 10) : null;
   const targetSupplierId = supplierId ? parseInt(supplierId, 10) : null;
-  console.log('Parsed Customer ID:', targetCustomerId);
-  console.log('Parsed Supplier ID:', targetSupplierId);
 
   // Generate local timestamp (YYYY-MM-DDTHH:MM:SS)
-  const now = new Date();
-  const localTimestamp = now.getFullYear() + '-' +
-    String(now.getMonth() + 1).padStart(2, '0') + '-' +
-    String(now.getDate()).padStart(2, '0') + 'T' +
-    String(now.getHours()).padStart(2, '0') + ':' +
-    String(now.getMinutes()).padStart(2, '0') + ':' +
-    String(now.getSeconds()).padStart(2, '0');
+  let localTimestamp;
+  if (customDate) {
+    // If customDate is provided (YYYY-MM-DD), add current time to it
+    const now = new Date();
+    localTimestamp = customDate + "T" +
+      String(now.getHours()).padStart(2, "0") + ":" +
+      String(now.getMinutes()).padStart(2, "0") + ":" +
+      String(now.getSeconds()).padStart(2, "0");
+  } else {
+    const now = new Date();
+    localTimestamp =
+      now.getFullYear() + "-" +
+      String(now.getMonth() + 1).padStart(2, "0") + "-" +
+      String(now.getDate()).padStart(2, "0") + "T" +
+      String(now.getHours()).padStart(2, "0") + ":" +
+      String(now.getMinutes()).padStart(2, "0") + ":" +
+      String(now.getSeconds()).padStart(2, "0");
+  }
 
-  const transaction = db.transaction((billItems) => {
+  logger.log(`[DB] Saving bill — total: ${totalAmount}, customer: ${targetCustomerId ?? 'none'}, supplier: ${targetSupplierId ?? 'none'}, date: ${localTimestamp}`, 'INFO');
+
+  const database = ensureDb();
+  const transaction = database.transaction((billItems) => {
     // 1. Insert the bill
-    const billStmt = db.prepare(`
+    const billStmt = database.prepare(`
       INSERT INTO bills (created_at, total_amount, supplier_id)
       VALUES (?, ?, ?)
     `);
-    const billResult = billStmt.run(localTimestamp, totalAmount, targetSupplierId);
+    const billResult = billStmt.run(
+      localTimestamp,
+      totalAmount,
+      targetSupplierId,
+    );
     const billId = billResult.lastInsertRowid;
-    console.log('Bill created with ID:', billId);
-
+  
     // 2. Insert all bill items
-    const itemStmt = db.prepare(`
+    const itemStmt = database.prepare(`
       INSERT INTO bill_items (bill_id, item_id, quantity, rate)
       VALUES (?, ?, ?, ?)
     `);
     for (const item of billItems) {
-      itemStmt.run(billId, item.id, item.quantity, item.price);
+      itemStmt.run(billId, item.id, item.quantity, validateAndRound(item.price, 'item.price'));
     }
 
     // 3. If a customerId is provided, link the bill to the credit customer
     if (targetCustomerId) {
-      console.log('Linking bill to customer...', targetCustomerId);
       try {
-        // Check if credit_bills table exists
-        const creditBillsTableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='credit_bills'").get();
-        if (!creditBillsTableCheck) {
-          console.error('CRITICAL ERROR: credit_bills table does NOT exist!');
-          throw new Error('Database table "credit_bills" is missing. Please restart the app.');
-        }
-        const creditBillStmt = db.prepare(`
+        const creditBillStmt = database.prepare(`
                 INSERT INTO credit_bills (bill_id, customer_id)
                 VALUES (?, ?)
             `);
         creditBillStmt.run(billId, targetCustomerId);
-        console.log('Successfully inserted into credit_bills');
-
-        // Verify immediate insertion
-        const verify = db.prepare("SELECT * FROM credit_bills WHERE bill_id = ?").get(billId);
-        console.log('Verification check (in transaction):', verify);
       } catch (linkError) {
-        console.error('ERROR linking bill to customer:', linkError.message);
+        logger.log(`Error linking bill ${billId} to customer ${targetCustomerId}: ${linkError.message}`, 'ERROR');
         throw linkError;
       }
     }
@@ -373,10 +766,22 @@ function saveBill(items, totalAmount, customerId = null, supplierId = null) {
 
   try {
     const finalBillId = transaction(items);
-    console.log('Transaction committed successfully for Bill ID:', finalBillId);
+    logger.log(`✅ Bill ${finalBillId} saved successfully for date: ${localTimestamp}`, "INFO");
+
+    /*
+    CRITICAL DURABILITY FIX:
+    Immediately update rolling backup AFTER successful commit.
+    This guarantees crash safety even if power loss happens 1 second later.
+    */
+    // FIX B: Handled as non-blocking background task to keep billing UI responsive
+    // Use queueMicrotask and await as per FIX B requirements
+    queueMicrotask(async () => {
+      await dbSafety.updateLatestBackup(db, dbPath, backupDir);
+    });
+
     return finalBillId;
   } catch (err) {
-    console.error('TRANSACTION FAILED:', err.message);
+    logger.log(`❌ TRANSACTION FAILED in saveBill: ${err.message}`, "ERROR");
     throw err;
   }
 }
@@ -386,7 +791,7 @@ function saveBill(items, totalAmount, customerId = null, supplierId = null) {
  * Used by: Future reports page
  */
 function getBillHistory(limit = 50) {
-  const stmt = db.prepare(`
+  const stmt = ensureDb().prepare(`
     SELECT b.*, s.name as supplier_name 
     FROM bills b
     LEFT JOIN suppliers s ON b.supplier_id = s.id
@@ -401,7 +806,7 @@ function getBillHistory(limit = 50) {
  * Used by: Future reports page to show bill details
  */
 function getBillItems(billId) {
-  const stmt = db.prepare(`
+  const stmt = ensureDb().prepare(`
     SELECT 
       bi.quantity,
       bi.rate,
@@ -421,52 +826,120 @@ function getBillItems(billId) {
  * Update an existing bill
  * Used by: Edit & Reprint feature
  */
-function updateBill(billId, items, totalAmount, supplierId = null) {
-  console.log('--- Database: updateBill called ---');
-  console.log('Bill ID:', billId);
-  console.log('Total Amount:', totalAmount);
-  console.log('Supplier ID:', supplierId);
-  console.log('Items:', items);
+function updateBill(billId, items, totalAmount, supplierId = null, customDate = null) {
 
-  const transaction = db.transaction((billItems) => {
-    // 1. Update bill total and supplier
-    const billStmt = db.prepare(`
-      UPDATE bills 
-      SET total_amount = ?, supplier_id = ?
-      WHERE id = ?
-    `);
-    billStmt.run(totalAmount, supplierId, billId);
-    console.log('Bill total and supplier updated');
+  // Validate monetary input — reject NaN, Infinity, negatives
+  totalAmount = validateAndRound(totalAmount, 'totalAmount');
+
+  const database = ensureDb();
+  const transaction = database.transaction((billItems) => {
+    // 1. ALWAYS update bill total and supplier; only update date if customDate provided
+    if (customDate) {
+      const now = new Date();
+      const localTimestamp = customDate + "T" +
+        String(now.getHours()).padStart(2, "0") + ":" +
+        String(now.getMinutes()).padStart(2, "0") + ":" +
+        String(now.getSeconds()).padStart(2, "0");
+
+      database.prepare(`
+        UPDATE bills 
+        SET created_at = ?, total_amount = ?, supplier_id = ?
+        WHERE id = ?
+      `).run(localTimestamp, totalAmount, supplierId, billId);
+    } else {
+      // FIX C1: Always update total and supplier even without date change
+      database.prepare(`
+        UPDATE bills 
+        SET total_amount = ?, supplier_id = ?
+        WHERE id = ?
+      `).run(totalAmount, supplierId, billId);
+    }
+    // SAFETY FIX: Preserve existing credit_bills link if it exists
+    // This allows editing a bill without losing its "Credit" status.
+    const existingCredit = database.prepare("SELECT customer_id FROM credit_bills WHERE bill_id = ?").get(billId);
+    if (existingCredit) {
+      // Re-insert link (using INSERT OR IGNORE just in case, though it should stay)
+      database.prepare("INSERT OR IGNORE INTO credit_bills (bill_id, customer_id) VALUES (?, ?)").run(billId, existingCredit.customer_id);
+    }
 
     // 2. Delete old bill items
-    const deleteStmt = db.prepare(`
+    const deleteStmt = database.prepare(`
       DELETE FROM bill_items 
       WHERE bill_id = ?
     `);
     deleteStmt.run(billId);
-    console.log('Old bill items deleted');
 
     // 3. Insert new bill items
-    const itemStmt = db.prepare(`
+    const itemStmt = database.prepare(`
       INSERT INTO bill_items (bill_id, item_id, quantity, rate)
       VALUES (?, ?, ?, ?)
     `);
     for (const item of billItems) {
       const itemId = item.item_id || item.id;
-      itemStmt.run(billId, itemId, item.quantity, item.price);
+      itemStmt.run(billId, itemId, item.quantity, validateAndRound(item.price, 'item.price'));
     }
-    console.log('New bill items inserted');
-
     return billId;
   });
 
   try {
     const finalBillId = transaction(items);
-    console.log('Update transaction committed successfully for Bill ID:', finalBillId);
+    logger.log(`✅ Bill ${finalBillId} updated successfully for date: ${customDate || 'original'}`, "INFO");
+
+    /*
+    CRITICAL DURABILITY FIX:
+    Immediately update rolling backup AFTER successful commit.
+    This guarantees crash safety even if power loss happens 1 second later.
+    */
+    // FIX B: Handled as non-blocking background task to keep billing UI responsive
+    // Use queueMicrotask and await as per FIX B requirements
+    queueMicrotask(async () => {
+      await dbSafety.updateLatestBackup(db, dbPath, backupDir);
+    });
+
     return finalBillId;
   } catch (err) {
-    console.error('UPDATE TRANSACTION FAILED:', err.message);
+    logger.log(`❌ UPDATE TRANSACTION FAILED: ${err.message}`, "ERROR");
     throw err;
+  }
+}
+
+/**
+ * Delete a bill permanently
+ * Used when an order is cancelled
+ */
+function deleteBill(billId) {
+  const bId = parseInt(billId);
+  if (isNaN(bId)) {
+    logger.log(`❌ deleteBill called with invalid ID: ${billId}`, "ERROR");
+    throw new Error(`Invalid Bill ID: ${billId}`);
+  }
+
+  logger.log(`📡 Attempting to delete bill ${bId}...`, "INFO");
+  const database = ensureDb();
+
+  try {
+    return database.transaction(() => {
+      // 1. Delete from child tables FIRST (Foreign Key safety)
+      const res1 = database.prepare("DELETE FROM credit_bills WHERE bill_id = ?").run(bId);
+      logger.log(`   - Deleted from credit_bills: ${res1.changes} rows`, "INFO");
+
+      const res2 = database.prepare("DELETE FROM bill_items WHERE bill_id = ?").run(bId);
+      logger.log(`   - Deleted from bill_items: ${res2.changes} rows`, "INFO");
+
+      // 2. Delete from main bills table
+      const result = database.prepare("DELETE FROM bills WHERE id = ?").run(bId);
+
+      if (result.changes > 0) {
+        logger.log(`✅ Successfully deleted bill ${bId} from all tables.`, "INFO");
+        return true;
+      } else {
+        logger.log(`⚠️  No bill found with ID ${bId} in main table.`, "WARN");
+        return false;
+      }
+    })();
+  } catch (error) {
+    logger.log(`❌ Error in deleteBill transaction (ID: ${bId}): ${error.message}`, "ERROR");
+    throw error; // Let main.js handle the IPC throw
   }
 }
 
@@ -475,40 +948,123 @@ function updateBill(billId, items, totalAmount, supplierId = null) {
  * Used by: Expenses Page
  */
 function addExpense(description, amount, expenseDate = null) {
-  // If no date provided, use today's local date (YYYY-MM-DD)
-  const now = new Date();
-  const date = expenseDate || (now.getFullYear() + '-' +
-    String(now.getMonth() + 1).padStart(2, '0') + '-' +
-    String(now.getDate()).padStart(2, '0'));
+  // Validate monetary input before transaction
+  amount = validateAndRound(amount, 'amount');
+  return ensureDb().transaction(() => {
+    // If no date provided, use today's local date (YYYY-MM-DD)
+    const now = new Date();
+    const date =
+      expenseDate ||
+      now.getFullYear() +
+        "-" +
+        String(now.getMonth() + 1).padStart(2, "0") +
+        "-" +
+        String(now.getDate()).padStart(2, "0");
 
-  const stmt = db.prepare(`
-    INSERT INTO expenses (expense_date, description, amount)
-    VALUES (?, ?, ?)
-  `);
-  const result = stmt.run(date, description, amount);
-  return result.lastInsertRowid;
+    const stmt = ensureDb().prepare(`
+      INSERT INTO expenses (expense_date, description, amount)
+      VALUES (?, ?, ?)
+    `);
+    const result = stmt.run(date, description, amount);
+    return result.lastInsertRowid;
+  })();
 }
 
 /**
  * Update an existing expense
  */
-function updateExpense(expenseId, description, amount) {
-  const stmt = db.prepare(`
-    UPDATE expenses 
-    SET description = ?, amount = ?
-    WHERE id = ?
-  `);
-  const result = stmt.run(description, amount, expenseId);
-  return result.changes;
+function updateExpense(expenseId, description, amount, expenseDate = null) {
+  // FIX H2: Validate monetary input on update path
+  amount = validateAndRound(amount, 'amount');
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    
+    // 1. Update the linked vendor transaction if it exists
+    if (expenseDate) {
+      database.prepare(`
+        UPDATE vendor_transactions 
+        SET amount = ?, description = ?, transaction_date = ?
+        WHERE expense_id = ?
+      `).run(amount, description, expenseDate, expenseId);
+    } else {
+      database.prepare(`
+        UPDATE vendor_transactions 
+        SET amount = ?, description = ?
+        WHERE expense_id = ?
+      `).run(amount, description, expenseId);
+    }
+
+    // 2. Update the linked staff transaction if it exists
+    if (expenseDate) {
+      database.prepare(`
+        UPDATE staff_transactions 
+        SET amount = ?, description = ?, transaction_date = ?
+        WHERE expense_id = ?
+      `).run(amount, description, expenseDate, expenseId);
+    } else {
+      database.prepare(`
+        UPDATE staff_transactions 
+        SET amount = ?, description = ?
+        WHERE expense_id = ?
+      `).run(amount, description, expenseId);
+    }
+
+    // 3. Update the expense itself
+    if (expenseDate) {
+      database.prepare(`
+        UPDATE expenses 
+        SET description = ?, amount = ?, expense_date = ?
+        WHERE id = ?
+      `).run(description, amount, expenseDate, expenseId);
+    } else {
+      database.prepare(`
+        UPDATE expenses 
+        SET description = ?, amount = ?
+        WHERE id = ?
+      `).run(description, amount, expenseId);
+    }
+    return 1;
+  })();
 }
 
 /**
  * Delete an expense
  */
 function deleteExpense(expenseId) {
-  const stmt = db.prepare(`DELETE FROM expenses WHERE id = ?`);
-  const result = stmt.run(expenseId);
-  return result.changes;
+  const eId = parseInt(expenseId, 10);
+  if (isNaN(eId)) {
+    logger.log(`❌ deleteExpense called with invalid ID: ${expenseId}`, "ERROR");
+    throw new Error(`Invalid Expense ID: ${expenseId}`);
+  }
+
+  try {
+    return ensureDb().transaction(() => {
+      const database = ensureDb();
+      
+      // 1. Delete linked transactions from all possible child tables
+      // This is necessary to satisfy foreign key constraints before deleting the parent expense
+      
+      const vRes = database.prepare('DELETE FROM vendor_transactions WHERE expense_id = ?').run(eId);
+      if (vRes.changes > 0) logger.log(`   - Deleted ${vRes.changes} linked vendor transactions`, "INFO");
+      
+      const sRes = database.prepare('DELETE FROM staff_transactions WHERE expense_id = ?').run(eId);
+      if (sRes.changes > 0) logger.log(`   - Deleted ${sRes.changes} linked staff transactions`, "INFO");
+      
+      // 2. Now delete the expense itself
+      const result = database.prepare('DELETE FROM expenses WHERE id = ?').run(eId);
+      
+      if (result.changes > 0) {
+        logger.log(`✅ Successfully deleted expense ${eId} and its associations.`, "INFO");
+        return result.changes;
+      } else {
+        logger.log(`⚠️ No expense found with ID ${eId}`, "WARN");
+        return 0;
+      }
+    })();
+  } catch (error) {
+    logger.log(`❌ Error in deleteExpense (ID: ${eId}): ${error.message}`, "ERROR");
+    throw error;
+  }
 }
 
 /**
@@ -516,11 +1072,14 @@ function deleteExpense(expenseId) {
  */
 function getTodayExpenses() {
   const now = new Date();
-  const today = now.getFullYear() + '-' +
-    String(now.getMonth() + 1).padStart(2, '0') + '-' +
-    String(now.getDate()).padStart(2, '0');
-  
-  const stmt = db.prepare(`
+  const today =
+    now.getFullYear() +
+    "-" +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(now.getDate()).padStart(2, "0");
+
+  const stmt = ensureDb().prepare(`
     SELECT * FROM expenses
     WHERE expense_date = ?
     ORDER BY id DESC
@@ -533,23 +1092,32 @@ function getTodayExpenses() {
  */
 function getTodayStats() {
   const now = new Date();
-  const today = now.getFullYear() + '-' +
-    String(now.getMonth() + 1).padStart(2, '0') + '-' +
-    String(now.getDate()).padStart(2, '0');
+  const today =
+    now.getFullYear() +
+    "-" +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(now.getDate()).padStart(2, "0");
 
-  // Get today's cash and credit sales
-  const salesStmt = db.prepare(`
+  const database = ensureDb();
+  // Get today's cash, credit and total sales
+  const salesStmt = database.prepare(`
     SELECT 
-      COALESCE(SUM(CASE WHEN cb.customer_id IS NULL THEN b.total_amount ELSE 0 END), 0) as cash_sales,
-      COALESCE(SUM(CASE WHEN cb.customer_id IS NOT NULL THEN b.total_amount ELSE 0 END), 0) as credit_sales
+      COALESCE(SUM(CASE WHEN cb.bill_id IS NULL THEN b.total_amount ELSE 0 END), 0) as cash_sales,
+      COALESCE(SUM(CASE WHEN cb.bill_id IS NOT NULL THEN b.total_amount ELSE 0 END), 0) as credit_sales,
+      COALESCE(SUM(b.total_amount), 0) as total_sales
     FROM bills b
     LEFT JOIN credit_bills cb ON b.id = cb.bill_id
     WHERE DATE(b.created_at) = ?
   `);
-  const sales = salesStmt.get(today) || { cash_sales: 0, credit_sales: 0 };
+  const sales = salesStmt.get(today) || {
+    cash_sales: 0,
+    credit_sales: 0,
+    total_sales: 0,
+  };
 
   // Get today's total expenses
-  const expenseStmt = db.prepare(`
+  const expenseStmt = database.prepare(`
     SELECT COALESCE(SUM(amount), 0) as total_expenses
     FROM expenses
     WHERE expense_date = ?
@@ -559,7 +1127,8 @@ function getTodayStats() {
   return {
     cashSales: sales.cash_sales,
     creditSales: sales.credit_sales,
-    totalExpenses: expenses.total_expenses
+    totalSales: sales.total_sales,
+    totalExpenses: expenses.total_expenses,
   };
 }
 
@@ -568,7 +1137,7 @@ function getTodayStats() {
  * Used by: Records Page
  */
 function getExpensesByDateRange(startDate, endDate) {
-  const stmt = db.prepare(`
+  const stmt = ensureDb().prepare(`
     SELECT * FROM expenses
     WHERE expense_date >= ? AND expense_date <= ?
     ORDER BY expense_date DESC
@@ -584,29 +1153,30 @@ function getDailyRecords(startDate, endDate, supplierId = null) {
   let query = `
     SELECT 
       DATE(b.created_at) as date,
-      COALESCE(SUM(CASE WHEN cb.customer_id IS NULL THEN b.total_amount ELSE 0 END), 0) as cash_sales,
-      COALESCE(SUM(CASE WHEN cb.customer_id IS NOT NULL THEN b.total_amount ELSE 0 END), 0) as credit_sales,
+      COALESCE(SUM(CASE WHEN cb.bill_id IS NULL THEN b.total_amount ELSE 0 END), 0) as cash_sales,
+      COALESCE(SUM(CASE WHEN cb.bill_id IS NOT NULL THEN b.total_amount ELSE 0 END), 0) as credit_sales,
       COALESCE(SUM(b.total_amount), 0) as total_sales,
       COUNT(b.id) as bill_count
     FROM bills b
     LEFT JOIN credit_bills cb ON b.id = cb.bill_id
     WHERE DATE(b.created_at) >= ? AND DATE(b.created_at) <= ?
   `;
-  
+
   const params = [startDate, endDate];
-  
+
   if (supplierId) {
     query += ` AND b.supplier_id = ? `;
     params.push(parseInt(supplierId, 10));
   }
-  
+
   query += ` GROUP BY DATE(b.created_at) ORDER BY date DESC`;
-  
-  const stmt = db.prepare(query);
+
+  const database = ensureDb();
+  const stmt = database.prepare(query);
   const sales = stmt.all(...params);
 
   // Get expenses grouped by date
-  const expenseStmt = db.prepare(`
+  const expenseStmt = database.prepare(`
     SELECT 
       expense_date as date,
       COALESCE(SUM(amount), 0) as total_expenses
@@ -619,24 +1189,24 @@ function getDailyRecords(startDate, endDate, supplierId = null) {
 
   // Create a map of expenses by date
   const expenseMap = {};
-  expenses.forEach(exp => {
+  expenses.forEach((exp) => {
     expenseMap[exp.date] = exp.total_expenses;
   });
 
   // Combine sales and expenses
-  const records = sales.map(sale => ({
+  const records = sales.map((sale) => ({
     date: sale.date,
     cash_sales: sale.cash_sales,
     credit_sales: sale.credit_sales,
     total_sales: sale.total_sales,
     bill_count: sale.bill_count,
     total_expenses: expenseMap[sale.date] || 0,
-    profit: sale.total_sales - (expenseMap[sale.date] || 0)
+    profit: sale.total_sales - (expenseMap[sale.date] || 0),
   }));
 
   // Add dates that have only expenses (no sales)
-  expenses.forEach(exp => {
-    if (!records.find(r => r.date === exp.date)) {
+  expenses.forEach((exp) => {
+    if (!records.find((r) => r.date === exp.date)) {
       records.push({
         date: exp.date,
         cash_sales: 0,
@@ -644,7 +1214,7 @@ function getDailyRecords(startDate, endDate, supplierId = null) {
         total_sales: 0,
         bill_count: 0,
         total_expenses: exp.total_expenses,
-        profit: -exp.total_expenses
+        profit: -exp.total_expenses,
       });
     }
   });
@@ -660,17 +1230,20 @@ function getDailyRecords(startDate, endDate, supplierId = null) {
  * Used by: Records Page when clicking on a day
  */
 function getBillsByDate(date) {
-  const stmt = db.prepare(`
+  const stmt = ensureDb().prepare(`
     SELECT 
       b.id,
       b.created_at,
       b.total_amount,
       TIME(b.created_at) as time,
-      cc.name as customer_name,
+      CASE 
+        WHEN cc.is_deleted = 1 THEN cc.name || ' (Deleted)' 
+        ELSE COALESCE(cc.name, '-') 
+      END as customer_name,
       cb.customer_id as credit_customer_id,
       s.name as supplier_name,
       s.is_deleted as supplier_deleted,
-      CASE WHEN cb.customer_id IS NOT NULL THEN 'CREDIT' ELSE 'CASH' END as bill_type
+      CASE WHEN cb.bill_id IS NOT NULL THEN 'CREDIT' ELSE 'CASH' END as bill_type
     FROM bills b
     LEFT JOIN credit_bills cb ON b.id = cb.bill_id
     LEFT JOIN credit_customers cc ON cb.customer_id = cc.id
@@ -686,7 +1259,7 @@ function getBillsByDate(date) {
  * Used by: Records Page when clicking on a day
  */
 function getExpensesByDate(date) {
-  const stmt = db.prepare(`
+  const stmt = ensureDb().prepare(`
     SELECT * FROM expenses
     WHERE expense_date = ?
     ORDER BY id DESC
@@ -699,28 +1272,29 @@ function getExpensesByDate(date) {
 /**
  * Add a new credit customer
  */
-function addCreditCustomer(name, phone = '') {
+function addCreditCustomer(name, phone = "") {
   try {
-    console.log('--- Attempting to add credit customer ---');
-    console.log('Name:', name);
-    console.log('Phone:', phone);
-
-    // Check if table exists just in case
-    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='credit_customers'").get();
+    const database = ensureDb();
+    const tableCheck = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='credit_customers'",
+      )
+      .get();
     if (!tableCheck) {
-      console.error('CRITICAL ERROR: credit_customers table does NOT exist!');
-      throw new Error('Database table "credit_customers" is missing. Please restart the app.');
+      console.error("CRITICAL ERROR: credit_customers table does NOT exist!");
+      throw new Error(
+        'Database table "credit_customers" is missing. Please restart the app.',
+      );
     }
 
-    const stmt = db.prepare(`
+    const stmt = database.prepare(`
       INSERT INTO credit_customers (name, phone)
       VALUES (?, ?)
     `);
     const result = stmt.run(name, phone);
-    console.log('Success! New Customer ID:', result.lastInsertRowid);
     return result.lastInsertRowid;
   } catch (error) {
-    console.error('DATABASE ERROR in addCreditCustomer:', error.message);
+    logger.log(`Error in addCreditCustomer: ${error.message}`, 'ERROR');
     throw error;
   }
 }
@@ -729,23 +1303,35 @@ function addCreditCustomer(name, phone = '') {
  * Add a payment from a credit customer
  */
 function addCreditPayment(customerId, amount, date = null) {
-  const now = new Date();
-  const paymentDate = date || (now.getFullYear() + '-' +
-    String(now.getMonth() + 1).padStart(2, '0') + '-' +
-    String(now.getDate()).padStart(2, '0'));
-  const stmt = db.prepare(`
-    INSERT INTO credit_payments (customer_id, date, amount)
-    VALUES (?, ?, ?)
-  `);
-  const result = stmt.run(customerId, paymentDate, amount);
-  return result.lastInsertRowid;
+  // Validate monetary input before transaction
+  amount = validateAndRound(amount, 'amount');
+  return ensureDb().transaction(() => {
+    // FIX H3: Guard against payments to deleted customers
+    const customer = ensureDb().prepare('SELECT is_deleted FROM credit_customers WHERE id = ?').get(customerId);
+    if (!customer) throw new Error('Customer not found');
+    if (customer.is_deleted === 1) throw new Error('Cannot add payment to a deleted customer');
+    const now = new Date();
+    const paymentDate =
+      date ||
+      now.getFullYear() +
+        "-" +
+        String(now.getMonth() + 1).padStart(2, "0") +
+        "-" +
+        String(now.getDate()).padStart(2, "0");
+    const stmt = ensureDb().prepare(`
+      INSERT INTO credit_payments (customer_id, date, amount)
+      VALUES (?, ?, ?)
+    `);
+    const result = stmt.run(customerId, paymentDate, amount);
+    return result.lastInsertRowid;
+  })();
 }
 
 /**
  * Get all credit customers with totals and balances
  */
 function getAllCreditCustomers() {
-  const stmt = db.prepare(`
+  const stmt = ensureDb().prepare(`
     SELECT 
       cc.id,
       cc.name,
@@ -762,13 +1348,14 @@ function getAllCreditCustomers() {
         WHERE customer_id = cc.id
       ), 0) as total_paid
     FROM credit_customers cc
+    WHERE cc.is_deleted = 0
     ORDER BY cc.name ASC
   `);
 
   const customers = stmt.all();
-  return customers.map(c => ({
+  return customers.map((c) => ({
     ...c,
-    balance: c.total_credit - c.total_paid
+    balance: c.total_credit - c.total_paid,
   }));
 }
 
@@ -779,31 +1366,26 @@ function getAllCreditCustomers() {
 function deleteCreditCustomer(customerId) {
   try {
     const targetId = parseInt(customerId, 10);
-    console.log(`--- Database: Attempting to delete customer ID: ${targetId} ---`);
-    
-    const deleteTx = db.transaction((id) => {
-      // 1. Delete payment records first (child table)
-      const payInfo = db.prepare('DELETE FROM credit_payments WHERE customer_id = ?').run(id);
-      console.log(`- Deleted ${payInfo.changes} payment records`);
+    logger.log(`[DB] Soft-deleting credit customer ID: ${targetId}`, 'INFO');
+
+    const deleteTx = ensureDb().transaction((id) => {
+      // SAFETY: We NO LONGER delete child records (payments and bill links).
+      // Keeping them preserves financial history and audit trails.
       
-      // 2. Delete links between bills and this customer (child table)
-      const billLinkInfo = db.prepare('DELETE FROM credit_bills WHERE customer_id = ?').run(id);
-      console.log(`- Deleted ${billLinkInfo.changes} bill links`);
-      
-      // 3. Delete the customer (parent table)
-      const custInfo = db.prepare('DELETE FROM credit_customers WHERE id = ?').run(id);
-      console.log(`- Deleted customer record: ${custInfo.changes} row(s)`);
-      
+      // Update the customer record to mark as deleted (soft delete)
+      const custInfo = ensureDb()
+        .prepare("UPDATE credit_customers SET is_deleted = 1 WHERE id = ?")
+        .run(id);
       if (custInfo.changes === 0) {
-        throw new Error('Customer record not found');
+        throw new Error("Customer record not found");
       }
-      
+
       return true;
     });
 
     return deleteTx(targetId);
   } catch (error) {
-    console.error('DATABASE ERROR in deleteCreditCustomer:', error.message);
+    logger.log(`Error in deleteCreditCustomer: ${error.message}`, 'ERROR');
     throw error;
   }
 }
@@ -812,14 +1394,10 @@ function deleteCreditCustomer(customerId) {
  * Get detailed info for a specific credit customer
  */
 function getCreditCustomerDetails(customerId) {
-  console.log('--- Database: getCreditCustomerDetails called ---');
-  console.log('Input Customer ID:', customerId, 'Type:', typeof customerId);
-
   const targetId = parseInt(customerId, 10);
-  console.log('Target ID for query:', targetId);
 
   // Get customer info and balance
-  const customerStmt = db.prepare(`
+  const customerStmt = ensureDb().prepare(`
      SELECT 
       cc.id,
       cc.name,
@@ -841,17 +1419,15 @@ function getCreditCustomerDetails(customerId) {
 
   const customer = customerStmt.get(targetId);
   if (!customer) {
-    console.log('No customer found with ID:', targetId);
     return null;
   }
 
   // Use the ID from the database record for subsequent queries
   const databaseId = customer.id;
   customer.balance = (customer.total_credit || 0) - (customer.total_paid || 0);
-  console.log('--- Debug details for', customer.name, '(DB ID:', databaseId, ') ---');
 
   // Get bills linked to this customer
-  const billsStmt = db.prepare(`
+  const billsStmt = ensureDb().prepare(`
     SELECT 
       b.id,
       b.created_at,
@@ -864,29 +1440,44 @@ function getCreditCustomerDetails(customerId) {
   `);
 
   const rawBills = billsStmt.all(databaseId);
-  customer.bills = rawBills.map(b => ({
+  customer.bills = rawBills.map((b) => ({
     ...b,
     // Provide safe defaults for date/time if SQL functions act up
-    date: b.raw_date ? b.raw_date.split('T')[0] : '',
-    time: b.raw_date ? b.raw_date.split('T')[1]?.split('.')[0] : ''
+    date: b.raw_date ? b.raw_date.split("T")[0] : "",
+    time: b.raw_date ? b.raw_date.split("T")[1]?.split(".")[0] : "",
   }));
 
-  console.log('Bills query result count:', customer.bills.length);
-  if (customer.bills.length > 0) {
-    console.log('First bill example:', customer.bills[0]);
-  }
-
   // Get payments made by this customer
-  const paymentsStmt = db.prepare(`
+  const paymentsStmt = ensureDb().prepare(`
     SELECT id, date, amount
     FROM credit_payments
     WHERE customer_id = ?
     ORDER BY date DESC, id DESC
   `);
   customer.payments = paymentsStmt.all(databaseId);
-  console.log('Payments query result count:', customer.payments.length);
 
   return customer;
+}
+
+/**
+ * Get bills for a specific credit customer within a date range
+ * Grouped by date as per user request for summary bill
+ */
+function getBillsByDateRange(customerId, startDate, endDate) {
+  const database = ensureDb();
+  const stmt = database.prepare(`
+    SELECT 
+      DATE(b.created_at) as bill_date,
+      SUM(b.total_amount) as daily_total
+    FROM bills b
+    JOIN credit_bills cb ON b.id = cb.bill_id
+    WHERE cb.customer_id = ? 
+    AND DATE(b.created_at) >= ? 
+    AND DATE(b.created_at) <= ?
+    GROUP BY DATE(b.created_at)
+    ORDER BY DATE(b.created_at) ASC
+  `);
+  return stmt.all(customerId, startDate, endDate);
 }
 
 // ========================================
@@ -898,7 +1489,7 @@ function getCreditCustomerDetails(customerId) {
  * Used by: Admin Page and Billing Page
  */
 function getAllCategories() {
-  const stmt = db.prepare('SELECT * FROM categories ORDER BY name ASC');
+  const stmt = ensureDb().prepare("SELECT * FROM categories ORDER BY name ASC");
   return stmt.all();
 }
 
@@ -907,9 +1498,11 @@ function getAllCategories() {
  * Used by: Admin Page
  */
 function addCategory(name) {
-  const stmt = db.prepare('INSERT INTO categories (name) VALUES (?)');
-  const result = stmt.run(name);
-  return result.lastInsertRowid;
+  return ensureDb().transaction(() => {
+    const stmt = ensureDb().prepare("INSERT INTO categories (name) VALUES (?)");
+    const result = stmt.run(name);
+    return result.lastInsertRowid;
+  })();
 }
 
 /**
@@ -917,25 +1510,28 @@ function addCategory(name) {
  * Used by: Admin Page
  */
 function updateCategory(id, name) {
-  const transaction = db.transaction((id, newName) => {
-    // 1. Get the old name first
-    const oldCategory = db.prepare('SELECT name FROM categories WHERE id = ?').get(id);
-    if (!oldCategory) return;
+  return ensureDb().transaction((id, newName) => {
+    const database = ensureDb();
+    const oldCategory = database
+      .prepare("SELECT name FROM categories WHERE id = ?")
+      .get(id);
 
-    // 2. Update all items using the old category name
-    const updateItemsStmt = db.prepare(`
+    if (!oldCategory) {
+      throw new Error(`Category with id=${id} not found`);
+    }
+
+    database.prepare(`
       UPDATE items 
       SET category = ? 
       WHERE category = ?
-    `);
-    updateItemsStmt.run(newName, oldCategory.name);
+    `).run(newName, oldCategory.name);
 
-    // 3. Update the category name in categories table
-    const updateCatStmt = db.prepare('UPDATE categories SET name = ? WHERE id = ?');
-    updateCatStmt.run(newName, id);
-  });
+    const result = database
+      .prepare("UPDATE categories SET name = ? WHERE id = ?")
+      .run(newName, id);
 
-  transaction(id, name);
+    return result.changes;
+  })(id, name);
 }
 
 /**
@@ -945,22 +1541,22 @@ function updateCategory(id, name) {
  */
 function deleteCategory(id) {
   const transaction = (id) => {
+    const database = ensureDb();
     // First, update all items with this category to 'Other'
-    const updateStmt = db.prepare(`
+    const updateStmt = database.prepare(`
       UPDATE items 
       SET category = 'Other' 
       WHERE category = (SELECT name FROM categories WHERE id = ?)
-    `);
+      `);
     updateStmt.run(id);
-    
+
     // Then delete the category
-    const deleteStmt = db.prepare('DELETE FROM categories WHERE id = ?');
+    const deleteStmt = database.prepare("DELETE FROM categories WHERE id = ?");
     deleteStmt.run(id);
   };
-  
-  db.transaction(transaction)(id);
-}
 
+  ensureDb().transaction(transaction)(id);
+}
 
 // ========================================
 // SUPPLIER MANAGEMENT FUNCTIONS
@@ -970,7 +1566,9 @@ function deleteCategory(id) {
  * Get all active suppliers
  */
 function getAllSuppliers() {
-  const stmt = db.prepare('SELECT * FROM suppliers WHERE is_active = 1 AND is_deleted = 0 ORDER BY name ASC');
+  const stmt = ensureDb().prepare(
+    "SELECT * FROM suppliers WHERE is_active = 1 AND is_deleted = 0 ORDER BY name ASC",
+  );
   return stmt.all();
 }
 
@@ -978,25 +1576,45 @@ function getAllSuppliers() {
  * Get all suppliers (including inactive)
  */
 function getAllSuppliersAdmin() {
-  const stmt = db.prepare('SELECT * FROM suppliers WHERE is_deleted = 0 ORDER BY name ASC');
+  const stmt = ensureDb().prepare(
+    "SELECT * FROM suppliers WHERE is_deleted = 0 ORDER BY name ASC",
+  );
   return stmt.all();
 }
 
 /**
- * Add a new supplier
+ * Add a new staff/supplier
  */
-function addSupplier(name) {
-  const stmt = db.prepare('INSERT INTO suppliers (name) VALUES (?)');
-  const result = stmt.run(name);
-  return result.lastInsertRowid;
+function addSupplier(name, dailyWage = 0) {
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    // FIX M3: Check for existing deleted supplier and reactivate
+    const existing = database.prepare("SELECT id, is_deleted FROM suppliers WHERE name = ?").get(name);
+    if (existing) {
+      if (existing.is_deleted === 0) {
+        throw new Error("A supplier/staff with this name already exists");
+      } else {
+        // Re-activate deleted supplier
+        database.prepare("UPDATE suppliers SET is_deleted = 0, is_active = 1, daily_wage = ? WHERE id = ?").run(dailyWage, existing.id);
+        return existing.id;
+      }
+    }
+    const stmt = database.prepare("INSERT INTO suppliers (name, daily_wage) VALUES (?, ?)");
+    const result = stmt.run(name, dailyWage);
+    return result.lastInsertRowid;
+  })();
 }
 
 /**
- * Update a supplier
+ * Update staff/supplier
  */
-function updateSupplier(id, name, isActive) {
-  const stmt = db.prepare('UPDATE suppliers SET name = ?, is_active = ? WHERE id = ?');
-  stmt.run(name, isActive ? 1 : 0, id);
+function updateSupplier(id, name, dailyWage, isActive) {
+  return ensureDb().transaction(() => {
+    const stmt = ensureDb().prepare(
+      "UPDATE suppliers SET name = ?, daily_wage = ?, is_active = ? WHERE id = ?",
+    );
+    stmt.run(name, dailyWage, isActive ? 1 : 0, id);
+  })();
 }
 
 /**
@@ -1004,9 +1622,13 @@ function updateSupplier(id, name, isActive) {
  * We use soft delete (is_deleted = 1) to preserve historical data
  */
 function deleteSupplier(id) {
-  const stmt = db.prepare('UPDATE suppliers SET is_deleted = 1 WHERE id = ?');
-  const result = stmt.run(id);
-  return result.changes > 0;
+  return ensureDb().transaction(() => {
+    const stmt = ensureDb().prepare(
+      "UPDATE suppliers SET is_deleted = 1 WHERE id = ?",
+    );
+    const result = stmt.run(id);
+    return result.changes > 0;
+  })();
 }
 
 /**
@@ -1014,27 +1636,371 @@ function deleteSupplier(id) {
  */
 function getSupplierWiseSales(startDate, endDate, supplierId = null) {
   let query = `
-    SELECT 
-      s.name as supplier_name,
+    SELECT
+    s.name as supplier_name,
       s.is_deleted,
       COUNT(b.id) as bill_count,
       SUM(b.total_amount) as total_sales
     FROM bills b
     JOIN suppliers s ON b.supplier_id = s.id
     WHERE DATE(b.created_at) >= ? AND DATE(b.created_at) <= ?
-  `;
-  
+      `;
+
   const params = [startDate, endDate];
-  
+
   if (supplierId) {
     query += ` AND s.id = ? `;
     params.push(parseInt(supplierId, 10));
   }
-  
+
   query += ` GROUP BY s.id ORDER BY total_sales DESC`;
-  
-  const stmt = db.prepare(query);
+
+  const stmt = ensureDb().prepare(query);
   return stmt.all(...params);
+}
+
+// ========================================
+// EMPLOYEE MAINTENANCE FUNCTIONS (Standalone Staff)
+// ========================================
+
+/**
+ * Get employee list with balances
+ */
+function getEmployeeList(showInactive = false) {
+  const showInactiveBool = Boolean(showInactive);
+  let whereClause = "WHERE e.is_deleted = 0";
+  if (!showInactiveBool) {
+    whereClause += " AND e.is_active = 1";
+  }
+
+  const stmt = ensureDb().prepare(`
+    SELECT 
+      e.*,
+      COALESCE(SUM(CASE WHEN et.type = 'WAGE' THEN et.amount ELSE -et.amount END), 0) as balance
+    FROM employees e
+    LEFT JOIN employee_transactions et ON e.id = et.employee_id
+    ${whereClause}
+    GROUP BY e.id
+    ORDER BY e.name
+  `);
+  return stmt.all();
+}
+
+/**
+ * Get detailed history for an employee
+ */
+function getEmployeeDetails(employeeId) {
+  const db = ensureDb();
+  const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(employeeId);
+  if (!employee) throw new Error("Employee not found");
+
+  const transactions = db.prepare(`
+    SELECT * FROM employee_transactions 
+    WHERE employee_id = ? 
+    ORDER BY transaction_date DESC, id DESC
+  `).all(employeeId);
+
+  const balanceResult = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN type = 'WAGE' THEN amount ELSE -amount END), 0) as balance
+    FROM employee_transactions 
+    WHERE employee_id = ?
+  `).get(employeeId);
+
+  return {
+    ...employee,
+    balance: balanceResult.balance,
+    transactions
+  };
+}
+
+/**
+ * Add a new employee or re-activate if deleted
+ */
+function addEmployee(name, dailyWage = 0) {
+  const database = ensureDb();
+  
+  // Check if employee already exists (including deleted ones)
+  const existing = database.prepare("SELECT id, is_deleted FROM employees WHERE name = ?").get(name);
+  
+  if (existing) {
+    if (existing.is_deleted === 0) {
+      throw new Error("An employee with this name already exists");
+    } else {
+      // Re-activate deleted employee
+      database.prepare("UPDATE employees SET is_deleted = 0, is_active = 1, daily_wage = ? WHERE id = ?").run(dailyWage, existing.id);
+      return existing.id;
+    }
+  }
+
+  const stmt = database.prepare(`
+    INSERT INTO employees (name, daily_wage, is_active, is_deleted)
+    VALUES (?, ?, 1, 0)
+  `);
+  const result = stmt.run(name, dailyWage);
+  return result.lastInsertRowid;
+}
+
+/**
+ * Update employee info
+ */
+function updateEmployee(id, name, dailyWage, isActive) {
+  const stmt = ensureDb().prepare(`
+    UPDATE employees 
+    SET name = ?, daily_wage = ?, is_active = ?
+    WHERE id = ?
+  `);
+  const result = stmt.run(name, dailyWage, isActive ? 1 : 0, id);
+  return result.changes;
+}
+
+/**
+ * Soft delete an employee
+ */
+function deleteEmployee(id) {
+  const stmt = ensureDb().prepare(`
+    UPDATE employees 
+    SET is_deleted = 1, is_active = 0
+    WHERE id = ?
+  `);
+  const result = stmt.run(id);
+  return result.changes;
+}
+
+/**
+ * Add an employee transaction (WAGE or PAYMENT)
+ */
+function addEmployeeTransaction(employeeId, amount, type, description, date = null) {
+  amount = validateAndRound(amount, 'amount');
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    const now = new Date();
+    const transactionDate = date || (now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0'));
+
+    let expenseId = null;
+
+    if (type === 'PAYMENT') {
+      const employee = database.prepare('SELECT name FROM employees WHERE id = ?').get(employeeId);
+      const expenseDesc = `Staff Payment: ${employee ? employee.name : ''} ${description ? '(' + description + ')' : ''}`.trim();
+      
+      const expenseStmt = database.prepare(`
+        INSERT INTO expenses (expense_date, description, amount)
+        VALUES (?, ?, ?)
+      `);
+      const expenseResult = expenseStmt.run(transactionDate, expenseDesc, amount);
+      expenseId = expenseResult.lastInsertRowid;
+    }
+
+    const stmt = database.prepare(`
+      INSERT INTO employee_transactions (employee_id, amount, transaction_date, type, description, expense_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(employeeId, amount, transactionDate, type, description, expenseId);
+    return result.lastInsertRowid;
+  })();
+}
+
+/**
+ * Update an employee transaction
+ */
+function updateEmployeeTransaction(id, amount, description, date) {
+  amount = validateAndRound(amount, 'amount');
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    const original = database.prepare('SELECT * FROM employee_transactions WHERE id = ?').get(id);
+    if (!original) throw new Error("Transaction not found");
+
+    if (original.expense_id) {
+      const employee = database.prepare('SELECT name FROM employees WHERE id = ?').get(original.employee_id);
+      const expenseDesc = `Staff Payment: ${employee ? employee.name : ''} ${description ? '(' + description + ')' : ''}`.trim();
+      
+      database.prepare(`
+        UPDATE expenses 
+        SET expense_date = ?, description = ?, amount = ?
+        WHERE id = ?
+      `).run(date, expenseDesc, amount, original.expense_id);
+    }
+
+    const stmt = database.prepare(`
+      UPDATE employee_transactions
+      SET amount = ?, description = ?, transaction_date = ?
+      WHERE id = ?
+    `);
+    const result = stmt.run(amount, description, date, id);
+    return result.changes;
+  })();
+}
+
+/**
+ * Delete an employee transaction
+ */
+function deleteEmployeeTransaction(transactionId) {
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    const transaction = database.prepare('SELECT id, expense_id FROM employee_transactions WHERE id = ?').get(transactionId);
+    if (!transaction) return 0;
+
+    if (transaction.expense_id) {
+      database.prepare('UPDATE employee_transactions SET expense_id = NULL WHERE id = ?').run(transactionId);
+      database.prepare('DELETE FROM expenses WHERE id = ?').run(transaction.expense_id);
+    }
+
+    const result = database.prepare('DELETE FROM employee_transactions WHERE id = ?').run(transactionId);
+    return result.changes;
+  })();
+}
+
+// ========================================
+// STAFF MAINTENANCE FUNCTIONS (LEGACY/WAITERS)
+// ========================================
+
+/**
+ * Get staff with balances
+ */
+function getStaffList(showInactive = false) {
+  const showInactiveBool = Boolean(showInactive);
+  let whereClause = "WHERE s.is_deleted = 0";
+  if (!showInactiveBool) {
+    whereClause += " AND s.is_active = 1";
+  }
+
+  const stmt = ensureDb().prepare(`
+    SELECT 
+      s.*,
+      COALESCE(SUM(CASE WHEN st.type = 'WAGE' THEN st.amount ELSE -st.amount END), 0) as balance
+    FROM suppliers s
+    LEFT JOIN staff_transactions st ON s.id = st.staff_id
+    ${whereClause}
+    GROUP BY s.id
+    ORDER BY s.name
+  `);
+  return stmt.all();
+}
+
+/**
+ * Get detailed history for a staff member
+ */
+function getStaffDetails(staffId) {
+  const db = ensureDb();
+  const staff = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(staffId);
+  if (!staff) throw new Error("Staff not found");
+
+  const transactions = db.prepare(`
+    SELECT * FROM staff_transactions 
+    WHERE staff_id = ? 
+    ORDER BY transaction_date DESC, id DESC
+  `).all(staffId);
+
+  const balanceResult = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN type = 'WAGE' THEN amount ELSE -amount END), 0) as balance
+    FROM staff_transactions 
+    WHERE staff_id = ?
+  `).get(staffId);
+
+  return {
+    ...staff,
+    balance: balanceResult.balance,
+    transactions
+  };
+}
+
+/**
+ * Add a staff transaction (WAGE or PAYMENT)
+ */
+function addStaffTransaction(staffId, amount, type, description, date = null) {
+  // Validate monetary input before transaction
+  amount = validateAndRound(amount, 'amount');
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    const now = new Date();
+    const transactionDate = date || (now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0'));
+
+    let expenseId = null;
+
+    // If it's a payment, we also add it to the daily expenses table
+    if (type === 'PAYMENT') {
+      const staff = database.prepare('SELECT name FROM suppliers WHERE id = ?').get(staffId);
+      const expenseDesc = `Staff Salary: ${staff ? staff.name : ''} ${description ? '(' + description + ')' : ''}`.trim();
+      
+      const expenseStmt = database.prepare(`
+        INSERT INTO expenses (expense_date, description, amount)
+        VALUES (?, ?, ?)
+      `);
+      const expenseResult = expenseStmt.run(transactionDate, expenseDesc, amount);
+      expenseId = expenseResult.lastInsertRowid;
+    }
+
+    const stmt = database.prepare(`
+      INSERT INTO staff_transactions (staff_id, amount, transaction_date, type, description, expense_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(staffId, amount, transactionDate, type, description, expenseId);
+    return result.lastInsertRowid;
+  })();
+}
+
+/**
+ * Sync daily wages for all active staff
+ * This should be called once per day (or checks if already done)
+ */
+
+/**
+ * Update a staff transaction
+ */
+function updateStaffTransaction(id, amount, description, date) {
+  // FIX H1: Validate monetary input on update path
+  amount = validateAndRound(amount, 'amount');
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    const original = database.prepare('SELECT * FROM staff_transactions WHERE id = ?').get(id);
+    if (!original) throw new Error("Transaction not found");
+
+    if (original.expense_id) {
+      const staff = database.prepare('SELECT name FROM suppliers WHERE id = ?').get(original.staff_id);
+      const expenseDesc = `Staff Salary: ${staff ? staff.name : ''} ${description ? '(' + description + ')' : ''}`.trim();
+      
+      database.prepare(`
+        UPDATE expenses 
+        SET expense_date = ?, description = ?, amount = ?
+        WHERE id = ?
+      `).run(date, expenseDesc, amount, original.expense_id);
+    }
+
+    const stmt = database.prepare(`
+      UPDATE staff_transactions
+      SET amount = ?, description = ?, transaction_date = ?
+      WHERE id = ?
+    `);
+    const result = stmt.run(amount, description, date, id);
+    return result.changes;
+  })();
+}
+
+/**
+ * Delete a staff transaction
+ */
+function deleteStaffTransaction(transactionId) {
+  try {
+    return ensureDb().transaction(() => {
+      const database = ensureDb();
+      const transaction = database.prepare('SELECT id, expense_id FROM staff_transactions WHERE id = ?').get(transactionId);
+      if (!transaction) return 0;
+
+      if (transaction.expense_id) {
+        database.prepare('UPDATE staff_transactions SET expense_id = NULL WHERE id = ?').run(transactionId);
+        database.prepare('DELETE FROM expenses WHERE id = ?').run(transaction.expense_id);
+      }
+
+      const result = database.prepare('DELETE FROM staff_transactions WHERE id = ?').run(transactionId);
+      return result.changes;
+    })();
+  } catch (error) {
+    logger.log(`❌ Error deleting staff transaction: ${error.message}`, "ERROR");
+    throw error;
+  }
 }
 
 /**
@@ -1043,13 +2009,216 @@ function getSupplierWiseSales(startDate, endDate, supplierId = null) {
  */
 async function backupDatabase(destinationPath) {
   try {
-    console.log('📡 Starting database backup to:', destinationPath);
+    console.log("📡 Starting database backup to:", destinationPath);
     // In better-sqlite3, .backup() returns a promise
-    await db.backup(destinationPath);
-    console.log('✅ Backup completed successfully');
+    await ensureDb().backup(destinationPath);
+    console.log("✅ Backup completed successfully");
     return true;
   } catch (error) {
-    console.error('❌ Backup failed:', error);
+    console.error("❌ Backup failed:", error);
+    throw error;
+  }
+}
+
+// ========== VENDOR CREDIT FUNCTIONS ==========
+
+/**
+ * Get all vendors with their current balance
+ */
+function getAllVendors() {
+  const stmt = ensureDb().prepare(`
+    SELECT 
+      v.*,
+      COALESCE(SUM(CASE WHEN vt.type = 'CREDIT' THEN vt.amount ELSE -vt.amount END), 0) as balance
+    FROM vendors v
+    LEFT JOIN vendor_transactions vt ON v.id = vt.vendor_id
+    WHERE v.is_deleted = 0
+    GROUP BY v.id
+    ORDER BY v.name
+  `);
+  return stmt.all();
+}
+
+/**
+ * Add a new vendor or re-activate if exists
+ */
+function addVendor(name, phone) {
+  try {
+    const database = ensureDb();
+    
+    // Check if vendor already exists (including deleted ones)
+    const existing = database.prepare("SELECT id, is_deleted FROM vendors WHERE name = ?").get(name);
+    
+    if (existing) {
+      if (existing.is_deleted === 0) {
+        throw new Error("A vendor with this name already exists");
+      } else {
+        // Re-activate deleted vendor
+        database.prepare("UPDATE vendors SET is_deleted = 0, is_active = 1, phone = ? WHERE id = ?").run(phone, existing.id);
+        return existing.id;
+      }
+    }
+
+    const stmt = database.prepare(`
+      INSERT INTO vendors (name, phone)
+      VALUES (?, ?)
+    `);
+    const result = stmt.run(name, phone);
+    return result.lastInsertRowid;
+  } catch (error) {
+    logger.log(`❌ Error in addVendor: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
+/**
+ * Add a vendor transaction (CREDIT or PAYMENT)
+ */
+function addVendorTransaction(vendorId, amount, type, description, date = null) {
+  // Validate monetary input before transaction
+  amount = validateAndRound(amount, 'amount');
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    const now = new Date();
+    const transactionDate = date || (now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0'));
+
+    let expenseId = null;
+
+    // If it's a payment, we also add it to the expenses table
+    if (type === 'PAYMENT') {
+      const vendor = database.prepare('SELECT name FROM vendors WHERE id = ?').get(vendorId);
+      const expenseDesc = `Vendor Payment: ${vendor ? vendor.name : ''} ${description ? '(' + description + ')' : ''}`.trim();
+      
+      const expenseStmt = database.prepare(`
+        INSERT INTO expenses (expense_date, description, amount)
+        VALUES (?, ?, ?)
+      `);
+      const expenseResult = expenseStmt.run(transactionDate, expenseDesc, amount);
+      expenseId = expenseResult.lastInsertRowid;
+    }
+
+    const stmt = database.prepare(`
+      INSERT INTO vendor_transactions (vendor_id, amount, transaction_date, type, description, expense_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(vendorId, amount, transactionDate, type, description, expenseId);
+    return result.lastInsertRowid;
+  })();
+}
+
+/**
+ * Get details and transaction history for a vendor
+ */
+function getVendorDetails(vendorId) {
+  const database = ensureDb();
+  const vendor = database.prepare('SELECT * FROM vendors WHERE id = ?').get(vendorId);
+
+  if (!vendor) return null;
+
+  const transactions = database.prepare(`
+    SELECT * FROM vendor_transactions
+    WHERE vendor_id = ?
+    ORDER BY transaction_date DESC, id DESC
+  `).all(vendorId);
+
+  // FIX: Use SQL aggregate instead of JS reduce to eliminate float accumulation drift
+  const balanceResult = database.prepare(`
+    SELECT COALESCE(SUM(
+      CASE WHEN type = 'CREDIT' THEN amount ELSE -amount END
+    ), 0) as balance
+    FROM vendor_transactions
+    WHERE vendor_id = ?
+  `).get(vendorId);
+
+  return {
+    ...vendor,
+    balance: balanceResult.balance,
+    transactions
+  };
+}
+
+/**
+ * Delete a vendor (soft delete)
+ */
+function deleteVendor(id) {
+  // SAFETY: Standardize on is_deleted = 1 for soft-delete.
+  // This preserves all linked vendor_transactions and expenses for history.
+  const stmt = ensureDb().prepare('UPDATE vendors SET is_deleted = 1, is_active = 0 WHERE id = ?');
+  const result = stmt.run(id);
+  return result.changes;
+}
+
+/**
+ * Update a vendor transaction
+ */
+function updateVendorTransaction(id, amount, description, date) {
+  // FIX H1: Validate monetary input on update path
+  amount = validateAndRound(amount, 'amount');
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    
+    // Get original transaction to handle expense update if it was a payment
+    const original = database.prepare('SELECT * FROM vendor_transactions WHERE id = ?').get(id);
+    if (!original) throw new Error("Transaction not found");
+
+    if (original.expense_id) {
+      // Update linked expense
+      const vendor = database.prepare('SELECT name FROM vendors WHERE id = ?').get(original.vendor_id);
+      const expenseDesc = `Vendor Payment: ${vendor ? vendor.name : ''} ${description ? '(' + description + ')' : ''}`.trim();
+      
+      database.prepare(`
+        UPDATE expenses 
+        SET expense_date = ?, description = ?, amount = ?
+        WHERE id = ?
+      `).run(date, expenseDesc, amount, original.expense_id);
+    }
+
+    const stmt = database.prepare(`
+      UPDATE vendor_transactions
+      SET amount = ?, description = ?, transaction_date = ?
+      WHERE id = ?
+    `);
+    const result = stmt.run(amount, description, date, id);
+    return result.changes;
+  })();
+}
+
+/**
+ * Delete a vendor transaction
+ */
+function deleteVendorTransaction(transactionId) {
+  try {
+    return ensureDb().transaction(() => {
+      const database = ensureDb();
+      
+      // Get the transaction details
+      const transaction = database.prepare('SELECT id, expense_id FROM vendor_transactions WHERE id = ?').get(transactionId);
+      if (!transaction) {
+        logger.log(`⚠️ Attempted to delete non-existent transaction ID: ${transactionId}`, "WARN");
+        return 0;
+      }
+
+      const expenseId = transaction.expense_id;
+
+      // 1. If it has an expense, we need to handle it carefully
+      if (expenseId) {
+        // First null it out in vendor_transactions to break the link
+        database.prepare('UPDATE vendor_transactions SET expense_id = NULL WHERE id = ?').run(transactionId);
+        // Then delete the expense
+        database.prepare('DELETE FROM expenses WHERE id = ?').run(expenseId);
+        logger.log(`🗑️ Deleted associated expense ID: ${expenseId}`, "INFO");
+      }
+
+      // 2. Now delete the vendor transaction itself
+      const result = database.prepare('DELETE FROM vendor_transactions WHERE id = ?').run(transactionId);
+      logger.log(`✅ Deleted vendor transaction ID: ${transactionId}`, "INFO");
+
+      return result.changes;
+    })();
+  } catch (error) {
+    logger.log(`❌ Error deleting vendor transaction: ${error.message}`, "ERROR");
     throw error;
   }
 }
@@ -1065,8 +2234,10 @@ module.exports = {
   deleteItem,
   saveBill,
   updateBill,
+  deleteBill,
   getBillHistory,
   getBillItems,
+  getNextBillId,
   // New expense functions
   addExpense,
   updateExpense,
@@ -1083,11 +2254,7 @@ module.exports = {
   deleteCreditCustomer,
   getAllCreditCustomers,
   getCreditCustomerDetails,
-  // Category functions
-  getAllCategories,
-  addCategory,
-  updateCategory,
-  deleteCategory,
+  getBillsByDateRange,
   // Supplier functions
   getAllSuppliers,
   getAllSuppliersAdmin,
@@ -1095,6 +2262,43 @@ module.exports = {
   updateSupplier,
   deleteSupplier,
   getSupplierWiseSales,
-  backupDatabase, // Add backup function
-  db, // Export the database connection for advanced use
+  // Category functions
+  getAllCategories,
+  addCategory,
+  updateCategory,
+  deleteCategory,
+  // Vendor functions
+  getAllVendors,
+  addVendor,
+  addVendorTransaction,
+  getVendorDetails,
+  deleteVendor,
+  updateVendorTransaction,
+  deleteVendorTransaction,
+  // Staff functions
+  getStaffList,
+  getStaffDetails,
+  addStaffTransaction,
+  updateStaffTransaction,
+  deleteStaffTransaction,
+  // Employee functions (Standalone)
+  getEmployeeList,
+  getEmployeeDetails,
+  addEmployee,
+  updateEmployee,
+  deleteEmployee,
+  addEmployeeTransaction,
+  updateEmployeeTransaction,
+  deleteEmployeeTransaction,
+  // System functions
+  backupDatabase,
+  // Safety/Backup functions
+  updateLatestBackup: async () =>
+    await dbSafety.updateLatestBackup(ensureDb(), dbPath, backupDir),
+  createDailySnapshot: async () =>
+    await dbSafety.createDailySnapshot(ensureDb(), dbPath, backupDir),
+  cleanupOldDailyBackups: () => dbSafety.cleanupOldDailyBackups(backupDir, 30),
+  get db() {
+    return db;
+  }, // Getter for the database connection
 };

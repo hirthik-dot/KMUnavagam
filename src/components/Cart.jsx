@@ -1,6 +1,44 @@
+import { useState, useRef, useEffect } from 'react';
 import './Cart.css';
 
 function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint, className = '' }) {
+    const [editingItemId, setEditingItemId] = useState(null);
+    const [editValue, setEditValue] = useState('');
+    const inputRef = useRef(null);
+
+    // Focus input when editing starts
+    useEffect(() => {
+        if (editingItemId && inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
+        }
+    }, [editingItemId]);
+
+    const handleDoubleClick = (item) => {
+        setEditingItemId(item.id);
+        setEditValue(item.quantity.toString());
+    };
+
+    const handleBlur = () => {
+        saveQuantity();
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            saveQuantity();
+        }
+    };
+
+    const saveQuantity = () => {
+        if (editingItemId === null) return;
+        
+        const newQty = parseInt(editValue, 10);
+        if (!isNaN(newQty) && newQty > 0) {
+            onUpdateQuantity(editingItemId, newQty);
+        }
+        setEditingItemId(null);
+    };
+
     return (
         <div className={`cart ${className}`}>
             <h2 className="cart-title">Cart</h2>
@@ -32,7 +70,28 @@ function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint, className 
                                     >
                                         −
                                     </button>
-                                    <span className="qty-display">{item.quantity}</span>
+                                    
+                                    {editingItemId === item.id ? (
+                                        <input
+                                            ref={inputRef}
+                                            type="number"
+                                            className="qty-input"
+                                            value={editValue}
+                                            onChange={(e) => setEditValue(e.target.value)}
+                                            onBlur={handleBlur}
+                                            onKeyDown={handleKeyDown}
+                                            min="1"
+                                        />
+                                    ) : (
+                                        <span 
+                                            className="qty-display"
+                                            onDoubleClick={() => handleDoubleClick(item)}
+                                            title="Double click to edit quantity"
+                                        >
+                                            {item.quantity}
+                                        </span>
+                                    )}
+
                                     <button
                                         className="qty-btn"
                                         onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
@@ -71,9 +130,6 @@ function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint, className 
                     >
                         Print Bill
                     </button>
-
-                    {/* Cutting Border */}
-                    <div className="cart-cutting-border"></div>
                 </>
             )}
         </div>
