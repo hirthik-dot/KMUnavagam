@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const creditStatementExport = require('./creditStatementExport');
+const staffLock = require('./staffLock');
 
 // Force dd/mm/yyyy date format by setting locale
 app.commandLine.appendSwitch('lang', 'en-GB');
@@ -1167,6 +1168,12 @@ function setupIPCHandlers() {
 
   // Installed app version (package.json "version", bumped on every build:win) — shown in the footer
   ipcMain.handle('app:getVersion', () => app.getVersion());
+
+  // Staff Maintenance PIN lock (hash checked here in the main process, never sent to the page)
+  ipcMain.handle('staffLock:hasPin', () => staffLock.hasPin());
+  ipcMain.handle('staffLock:verify', (event, pin) => staffLock.verifyPin(pin));
+  ipcMain.handle('staffLock:setPin', (event, pin, currentPin) => staffLock.setPin(pin, currentPin));
+  ipcMain.handle('staffLock:reset', (event, resetPassword) => staffLock.resetPin(resetPassword));
 
   ipcMain.handle('system:backupDatabase', async () => {
     try {

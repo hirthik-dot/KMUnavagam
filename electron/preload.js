@@ -35,6 +35,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Installed version, e.g. "1.0.3"
     getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 
+    // Staff Maintenance PIN lock (always on; first visit creates the PIN)
+    hasStaffPin: () => ipcRenderer.invoke('staffLock:hasPin'),
+    verifyStaffPin: (pin) => ipcRenderer.invoke('staffLock:verify', pin),
+    // currentPin is needed to change an existing PIN
+    setStaffPin: (pin, currentPin) => ipcRenderer.invoke('staffLock:setPin', pin, currentPin),
+    // Forgotten PIN: needs the reset password given to the owner
+    resetStaffPin: (resetPassword) => ipcRenderer.invoke('staffLock:reset', resetPassword),
+
     // ========== SETTINGS ==========
 
     // Get an app setting (e.g. 'printLanguage')
