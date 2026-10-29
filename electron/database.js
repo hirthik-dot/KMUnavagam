@@ -1413,14 +1413,55 @@ function addCreditPayment(customerId, amount, date = null) {
 }
 
 /**
+ * Correct a credit payment (amount and/or date)
+ */
+function updateCreditPayment(paymentId, amount, date) {
+  amount = validateAndRound(amount, 'amount');
+  if (amount <= 0) throw new Error('Payment amount must be greater than 0');
+  const result = ensureDb()
+    .prepare('UPDATE credit_payments SET amount = ?, date = ? WHERE id = ?')
+    .run(amount, date, paymentId);
+  if (result.changes === 0) throw new Error('Payment not found');
+  return result.changes;
+}
+
+/**
+ * Delete a credit payment (customer's balance goes back up by that amount)
+ */
+function deleteCreditPayment(paymentId) {
+  const result = ensureDb()
+    .prepare('DELETE FROM credit_payments WHERE id = ?')
+    .run(paymentId);
+  if (result.changes === 0) throw new Error('Payment not found');
+  return result.changes;
+}
+
+/**
+ * Current balance (owed by the customer) = credit bills - payments
+ */
+function getCreditBalance(customerId) {
+  const database = ensureDb();
+  const billed = database.prepare(`
+    SELECT COALESCE(SUM(b.total_amount), 0) as total
+    FROM bills b JOIN credit_bills cb ON b.id = cb.bill_id
+    WHERE cb.customer_id = ?
+  `).get(customerId).total;
+  const settled = database.prepare(`
+    SELECT COALESCE(SUM(amount), 0) as total FROM credit_payments WHERE customer_id = ?
+  `).get(customerId).total;
+  return Math.round((billed - settled) * 100) / 100;
+}
+
+/**
  * Get all credit customers with totals and balances
  */
-function getAllCreditCustomers() {
+function getAllCreditCustomers(includeDeleted = false) {
   const stmt = ensureDb().prepare(`
     SELECT 
       cc.id,
       cc.name,
       cc.phone,
+      cc.is_deleted,
       COALESCE((
         SELECT SUM(b.total_amount)
         FROM bills b
@@ -1433,11 +1474,11 @@ function getAllCreditCustomers() {
         WHERE customer_id = cc.id
       ), 0) as total_paid
     FROM credit_customers cc
-    WHERE cc.is_deleted = 0
-    ORDER BY cc.name ASC
+    WHERE cc.is_deleted = 0 OR ? = 1
+    ORDER BY cc.is_deleted ASC, cc.name ASC
   `);
 
-  const customers = stmt.all();
+  const customers = stmt.all(includeDeleted ? 1 : 0);
   return customers.map((c) => ({
     ...c,
     balance: c.total_credit - c.total_paid,
@@ -1456,6 +1497,12 @@ function deleteCreditCustomer(customerId) {
     const deleteTx = ensureDb().transaction((id) => {
       // SAFETY: We NO LONGER delete child records (payments and bill links).
       // Keeping them preserves financial history and audit trails.
+
+      // A customer who has not fully paid can't be deleted: the money owed would vanish from the Credits list
+      const balance = getCreditBalance(id);
+      if (balance > 0) {
+        throw new Error(`Customer still owes ₹${balance}. Record their payments before deleting.`);
+      }
       
       // Update the customer record to mark as deleted (soft delete)
       const custInfo = ensureDb()
@@ -1476,6 +1523,17 @@ function deleteCreditCustomer(customerId) {
 }
 
 /**
+ * Undo a customer delete: they show in the Credits list again with their full history
+ */
+function restoreCreditCustomer(customerId) {
+  const result = ensureDb()
+    .prepare("UPDATE credit_customers SET is_deleted = 0 WHERE id = ?")
+    .run(customerId);
+  if (result.changes === 0) throw new Error("Customer record not found");
+  return result.changes;
+}
+
+/**
  * Get detailed info for a specific credit customer
  */
 function getCreditCustomerDetails(customerId) {
@@ -1487,6 +1545,7 @@ function getCreditCustomerDetails(customerId) {
       cc.id,
       cc.name,
       cc.phone,
+      cc.is_deleted,
       COALESCE((
         SELECT SUM(b.total_amount)
         FROM bills b
@@ -1517,6 +1576,7 @@ function getCreditCustomerDetails(customerId) {
       b.id,
       b.created_at,
       b.total_amount,
+      b.supplier_id,
       b.created_at as raw_date
     FROM bills b
     JOIN credit_bills cb ON b.id = cb.bill_id
@@ -2578,6 +2638,11 @@ module.exports = {
   getAllCreditCustomers,
   getCreditCustomerDetails,
   getBillsByDateRange,
+  getCreditStatement,
+  updateCreditPayment,
+  deleteCreditPayment,
+  getCreditBalance,
+  restoreCreditCustomer,
   // Supplier functions
   getAllSuppliers,
   getAllSuppliersAdmin,

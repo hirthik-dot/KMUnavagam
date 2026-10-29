@@ -117,8 +117,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('db:addCreditCustomer', name, phone),
 
     // Get all credit customers
-    getAllCreditCustomers: () =>
-        ipcRenderer.invoke('db:getAllCreditCustomers'),
+    // includeDeleted: also list deleted customers (Credits page "Show deleted customers")
+    getAllCreditCustomers: (includeDeleted = false) =>
+        ipcRenderer.invoke('db:getAllCreditCustomers', includeDeleted),
 
     // Get credit customer details
     getCreditCustomerDetails: (customerId) =>
@@ -137,6 +138,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Delete credit customer
     deleteCreditCustomer: (id) =>
         ipcRenderer.invoke('db:deleteCreditCustomer', id),
+
+    // Undo a customer delete
+    restoreCreditCustomer: (id) =>
+        ipcRenderer.invoke('db:restoreCreditCustomer', id),
 
     // Get bills by date range for summary
     getBillsByDateRange: (customerId, startDate, endDate) =>

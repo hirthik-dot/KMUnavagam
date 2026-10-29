@@ -296,3 +296,42 @@
 .back-btn:hover {
     background: #f8fafc;
 }
+/* Show deleted customers toggle */
+.credits-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.show-deleted-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+}
+
+.show-deleted-toggle input {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+/* Deleted customers (shown only with the toggle on) */
+.deleted-row td {
+    color: #94a3b8;
+}
+
+.deleted-tag {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+}

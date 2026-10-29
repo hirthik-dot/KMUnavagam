@@ -507,9 +507,9 @@ function setupIPCHandlers() {
   });
 
   // Get all credit customers
-  ipcMain.handle('db:getAllCreditCustomers', async (event) => {
+  ipcMain.handle('db:getAllCreditCustomers', async (event, includeDeleted) => {
     try {
-      return db.getAllCreditCustomers();
+      return db.getAllCreditCustomers(Boolean(includeDeleted));
     } catch (error) {
       console.error('Error getting credit customers:', error);
       throw error;
@@ -555,6 +555,15 @@ function setupIPCHandlers() {
   });
 
   // Delete credit customer
+  ipcMain.handle('db:restoreCreditCustomer', async (event, id) => {
+    try {
+      return db.restoreCreditCustomer(id);
+    } catch (error) {
+      console.error('Error restoring credit customer:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('db:deleteCreditCustomer', async (event, id) => {
     try {
       return db.deleteCreditCustomer(id);

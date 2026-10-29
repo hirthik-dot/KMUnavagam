@@ -561,3 +561,44 @@
 .confirm-icon.danger {
     color: #ef4444;
 }
+
+/* Deleted customer: read-only view */
+.customer-deleted-tag {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 14px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.restore-customer-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #10b981;
+    color: white;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.restore-customer-btn:hover {
+    background: #059669;
+}
+
+.deleted-customer-banner {
+    margin: 0 0 20px;
+    padding: 14px 18px;
+    border-radius: 10px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.deleted-customer-banner i {
+    margin-right: 8px;
+}

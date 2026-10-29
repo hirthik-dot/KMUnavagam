@@ -79,6 +79,18 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
         }
     };
 
+    // Undo a customer delete
+    const handleRestore = async () => {
+        try {
+            await window.electronAPI.restoreCreditCustomer(customer.id);
+            setToast({ message: `${customer.name} restored`, type: 'success' });
+            loadCustomerDetails();
+        } catch (error) {
+            console.error('Error restoring customer:', error);
+            setToast({ message: 'Failed to restore customer', type: 'error' });
+        }
+    };
+
     const handleDeleteBill = async () => {
         if (!billToDelete) return;
         try {
@@ -95,6 +107,72 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
         } finally {
             setBillToDelete(null);
         }
+    };
+
+    // Edit a bill: same flow as Records "Edit & Reprint", but comes back to this customer afterwards
+    const handleEditBill = async (bill) => {
+        try {
+            const items = await window.electronAPI.getBillItems(bill.id);
+            const cartItems = items.map(item => ({
+                id: item.item_id || item.id,
+                item_id: item.item_id || item.id,
+                name_tamil: item.name_tamil,
+                name_hindi: item.name_hindi,
+                name_english: item.name_english,
+                price: item.rate,
+                quantity: item.quantity,
+                image_path: item.image_path || null
+            }));
+
+            onNavigate('billing', {
+                editMode: true,
+                originalBillId: bill.id,
+                cart: cartItems,
+                creditCustomer: { creditCustomerId: customer.id, customerName: customer.name },
+                customerName: customer.name,
+                supplierId: bill.supplier_id,
+                billDate: bill.date || getTodayLocaleDate(),
+                returnTo: { page: 'credit-details', data: customer.id }
+            });
+        } catch (error) {
+            console.error('Error loading bill for editing:', error);
+            setToast({ message: 'Failed to load bill for editing', type: 'error' });
+        }
+    };
+
+    // Open the payment form for a NEW payment (amount pre-filled for Full Settlement)
+    const openNewPayment = (amount) => {
+        setEditingPaymentId(null);
+        setPaymentAmount(amount);
+        setPaymentDate(getTodayLocaleDate());
+        setShowPaymentForm(true);
+    };
+
+    // Open the same form to correct an existing payment
+    const openEditPayment = (payment) => {
+        setEditingPaymentId(payment.id);
+        setPaymentAmount(payment.amount.toString());
+        setPaymentDate(payment.date);
+        setShowPaymentForm(true);
+    };
+
+    const handleDeletePayment = (payment) => {
+        setConfirmDialog({
+            message: `Delete the payment of ₹${formatMoney(payment.amount)} on ${formatToDisplayDate(payment.date)}? The customer's pending balance will go up by this amount.`,
+            onConfirm: async () => {
+                try {
+                    await window.electronAPI.deleteCreditPayment(payment.id);
+                    setToast({ message: 'Payment deleted', type: 'success' });
+                    loadCustomerDetails();
+                } catch (error) {
+                    console.error('Error deleting payment:', error);
+                    setToast({ message: 'Failed to delete payment', type: 'error' });
+                } finally {
+                    setConfirmDialog(null);
+                }
+            },
+            onCancel: () => setConfirmDialog(null)
+        });
     };
 
     const handleAddPayment = async (e) => {
@@ -187,6 +265,9 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
         </div>
     );
 
+    // Deleted customers are opened from Credits → "Show deleted customers": history is read-only
+    const isDeleted = customer.is_deleted === 1;
+
     return (
         <div className="details-page">
             <PageHeader onNavigate={onNavigate} backTo="credits" />
@@ -197,13 +278,22 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                     <div className="name-and-phone">
                         <div className="name-with-actions">
                             <h1 className="customer-name">{customer.name}</h1>
-                            <button
-                                className="delete-customer-btn"
-                                onClick={() => setShowDeleteConfirm(true)}
-                                title="Delete this customer"
-                            >
-                                <i className="fa-solid fa-trash-can"></i>
-                            </button>
+                            {isDeleted ? (
+                                <>
+                                    <span className="customer-deleted-tag">Deleted</span>
+                                    <button className="restore-customer-btn" onClick={handleRestore} title="Restore this customer">
+                                        <i className="fa-solid fa-rotate-left"></i> Restore
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    className="delete-customer-btn"
+                                    onClick={() => setShowDeleteConfirm(true)}
+                                    title="Delete this customer"
+                                >
+                                    <i className="fa-solid fa-trash-can"></i>
+                                </button>
+                            )}
                         </div>
                         <p className="customer-phone"><i className="fa-solid fa-mobile-screen-button"></i> {customer.phone || 'No phone provided'}</p>
                     </div>
@@ -215,8 +305,15 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                     </div>
                 </div>
 
+                {isDeleted && (
+                    <div className="deleted-customer-banner">
+                        <i className="fa-solid fa-lock"></i> This customer was deleted. Their history is read-only — Restore them to add bills or payments.
+                    </div>
+                )}
+
                 {/* Actions */}
                 <div className="details-actions">
+                    {!isDeleted && (<>
                     <button
                         className="new-bill-btn"
                         onClick={() => onNavigate('billing', { creditCustomerId: customer.id, customerName: customer.name })}
@@ -236,6 +333,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                     >
                         <i className="fa-solid fa-check-double"></i> Full Settlement
                     </button>
+                    </>)}
                     <button
                         className="summary-btn"
                         onClick={() => setShowSummaryModal(true)}
@@ -270,6 +368,8 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                                                 <td className="bold">₹{formatMoney(bill.total_amount)}</td>
                                                 <td className="actions-cell">
                                                     <button className="view-btn" onClick={() => viewBillDetails(bill)}>View Bill</button>
+                                                    {!isDeleted && (<>
+                                                    <button className="view-btn" onClick={() => handleEditBill(bill)}>Edit</button>
                                                     <button 
                                                         className="delete-bill-btn-small" 
                                                         onClick={() => setBillToDelete(bill)}
@@ -277,6 +377,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                                                     >
                                                         <i className="fa-solid fa-trash-can"></i>
                                                     </button>
+                                                    </>)}
                                                 </td>
                                             </tr>
                                         ))}
@@ -305,7 +406,19 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                                         {customer.payments.map((p) => (
                                             <tr key={p.id}>
                                                 <td>{formatToDisplayDate(p.date)}</td>
-                                                <td className="paid-amount">₹{p.amount.toFixed(0)}</td>
+                                                <td className="paid-amount">₹{formatMoney(p.amount)}</td>
+                                                <td className="actions-cell">
+                                                    {!isDeleted && (<>
+                                                    <button className="view-btn" onClick={() => openEditPayment(p)}>Edit</button>
+                                                    <button
+                                                        className="delete-bill-btn-small"
+                                                        onClick={() => handleDeletePayment(p)}
+                                                        title="Delete this payment"
+                                                    >
+                                                        <i className="fa-solid fa-trash-can"></i>
+                                                    </button>
+                                                    </>)}
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -406,15 +519,31 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                         <div className="confirm-icon">
                             <i className="fa-solid fa-triangle-exclamation"></i>
                         </div>
-                        <h2>Delete Customer?</h2>
-                        <p className="confirm-text">
-                            Are you sure you want to delete <strong>{customer.name}</strong>?
-                            This will permanently remove all their credit and payment records.
-                        </p>
-                        <div className="modal-actions">
-                            <button className="confirm-cancel-btn" onClick={() => setShowDeleteConfirm(false)}>No, Keep</button>
-                            <button className="confirm-delete-btn" onClick={confirmDelete}>Yes, Delete</button>
-                        </div>
+                        {roundMoney(customer.balance) > 0 ? (
+                            // Not fully paid: can't delete until the balance is cleared with payments
+                            <>
+                                <h2>Can't Delete Yet</h2>
+                                <p className="confirm-text">
+                                    <strong>{customer.name}</strong> still owes <strong>₹{formatMoney(customer.balance)}</strong>.
+                                    A customer can be deleted only after they have fully paid.
+                                </p>
+                                <div className="modal-actions">
+                                    <button className="confirm-cancel-btn" onClick={() => setShowDeleteConfirm(false)}>OK</button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <h2>Delete Customer?</h2>
+                                <p className="confirm-text">
+                                    Are you sure you want to delete <strong>{customer.name}</strong>?
+                                    They will be removed from the Credits list. Their bills and payments stay in Records.
+                                </p>
+                                <div className="modal-actions">
+                                    <button className="confirm-cancel-btn" onClick={() => setShowDeleteConfirm(false)}>No, Keep</button>
+                                    <button className="confirm-delete-btn" onClick={confirmDelete}>Yes, Delete</button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

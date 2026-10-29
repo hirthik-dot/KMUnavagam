@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import PageHeader from '../components/PageHeader';
 import Footer from '../components/Footer';
 import Toast from '../components/Toast';
-import './CreditsPage.css';
+import './CreditsPage.css';
+import { formatMoney } from '../utils/money';
 
 /**
  * CREDITS PAGE
@@ -15,9 +16,17 @@ function CreditsPage({ onNavigate, navData }) {
     const [newCustomer, setNewCustomer] = useState({ name: '', phone: '' });
     const [isLoading, setIsLoading] = useState(false);
     const [toast, setToast] = useState(null);
+    // Remembered per PC so it stays on while going in and out of a deleted customer's page
+    const [showDeleted, setShowDeleted] = useState(() => {
+        try { return localStorage.getItem('credits.showDeleted') === '1'; } catch (e) { return false; }
+    });
 
     useEffect(() => {
+        try { localStorage.setItem('credits.showDeleted', showDeleted ? '1' : '0'); } catch (e) { /* ignore */ }
         loadCustomers();
+    }, [showDeleted]);
+
+    useEffect(() => {
 
         // Show deletion success message if passed from details page
         if (navData && navData.deletedCustomer) {
@@ -31,7 +40,7 @@ function CreditsPage({ onNavigate, navData }) {
     const loadCustomers = async () => {
         setIsLoading(true);
         try {
-            const data = await window.electronAPI.getAllCreditCustomers();
+            const data = await window.electronAPI.getAllCreditCustomers(showDeleted);
             setCustomers(data);
         } catch (error) {
             console.error('Error loading customers:', error);
@@ -65,12 +74,22 @@ function CreditsPage({ onNavigate, navData }) {
                         <h1 className="credits-title"><i className="fa-solid fa-handshake"></i> Credit Customers</h1>
                         <p className="credits-subtitle">Track pending balances and payments</p>
                     </div>
-                    <button
-                        className="add-customer-btn"
-                        onClick={() => setShowAddForm(true)}
-                    >
-                        + Add Credit Customer
-                    </button>
+                    <div className="credits-header-actions">
+                        <label className="show-deleted-toggle">
+                            <input
+                                type="checkbox"
+                                checked={showDeleted}
+                                onChange={(e) => setShowDeleted(e.target.checked)}
+                            />
+                            Show deleted customers
+                        </label>
+                        <button
+                            className="add-customer-btn"
+                            onClick={() => setShowAddForm(true)}
+                        >
+                            + Add Credit Customer
+                        </button>
+                    </div>
                 </div>
 
                 {/* Summary Table */}
@@ -95,14 +114,17 @@ function CreditsPage({ onNavigate, navData }) {
                                     <tr
                                         key={c.id}
                                         onClick={() => onNavigate('credit-details', c.id)}
-                                        className="clickable-row"
+                                        className={`clickable-row ${c.is_deleted ? 'deleted-row' : ''}`}
                                     >
-                                        <td className="name-cell">{c.name}</td>
+                                        <td className="name-cell">
+                                            {c.name}
+                                            {c.is_deleted === 1 && <span className="deleted-tag">Deleted</span>}
+                                        </td>
                                         <td className="phone-cell">{c.phone || '-'}</td>
-                                        <td className="amount-cell text-right">₹{c.total_credit?.toFixed(0)}</td>
-                                        <td className="amount-cell paid text-right">₹{c.total_paid?.toFixed(0)}</td>
+                                        <td className="amount-cell text-right">₹{formatMoney(c.total_credit)}</td>
+                                        <td className="amount-cell paid text-right">₹{formatMoney(c.total_paid)}</td>
                                         <td className={`amount-cell balance text-right ${c.balance > 0 ? 'pending' : ''}`}>
-                                            ₹{c.balance?.toFixed(0)}
+                                            ₹{formatMoney(c.balance)}
                                         </td>
                                     </tr>
                                 ))}
