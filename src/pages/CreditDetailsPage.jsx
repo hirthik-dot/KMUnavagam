@@ -4,6 +4,8 @@ import Footer from '../components/Footer';
 import { formatToDisplayDate, getTodayLocaleDate } from '../utils/DateUtils';
 import Toast from '../components/Toast';
 import PaymentSuccessModal from '../components/PaymentSuccessModal';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { formatMoney, roundMoney } from '../utils/money';
 import './CreditDetailsPage.css';
 
 /**
@@ -22,6 +24,9 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
     const [toast, setToast] = useState(null);
     const [billToDelete, setBillToDelete] = useState(null);
     const [paymentDate, setPaymentDate] = useState(getTodayLocaleDate());
+    // Set when the payment form is correcting an existing payment instead of adding one
+    const [editingPaymentId, setEditingPaymentId] = useState(null);
+    const [confirmDialog, setConfirmDialog] = useState(null);
 
     // For Bill Preview Modal
     const [selectedBill, setSelectedBill] = useState(null);
@@ -97,6 +102,21 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
         const amount = parseFloat(paymentAmount);
         if (isNaN(amount) || amount <= 0) return;
 
+        if (editingPaymentId) {
+            try {
+                await window.electronAPI.updateCreditPayment(editingPaymentId, amount, paymentDate);
+                setToast({ message: 'Payment updated', type: 'success' });
+                setEditingPaymentId(null);
+                setPaymentAmount('');
+                setShowPaymentForm(false);
+                loadCustomerDetails();
+            } catch (error) {
+                console.error('Error updating payment:', error);
+                setToast({ message: 'Failed to update payment', type: 'error' });
+            }
+            return;
+        }
+
         try {
             await window.electronAPI.addCreditPayment(customerId, amount, paymentDate);
             setLastPaymentAmount(amount);
@@ -139,9 +159,8 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                 return;
             }
 
-            const total = billsInPeriod.reduce((sum, b) => sum + b.daily_total, 0);
-            
-            await window.electronAPI.printCreditSummary({
+            const total = roundMoney(billsInPeriod.reduce((sum, b) => sum + b.daily_total, 0));
+            const data = {
                 customerName: customer.name,
                 startDate: formatToDisplayDate(summaryStartDate),
                 endDate: formatToDisplayDate(summaryEndDate),
@@ -191,7 +210,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                     <div className="balance-card">
                         <span className="balance-label">Pending Balance</span>
                         <h2 className={`balance-value ${(customer.balance || 0) > 0 ? 'pending' : ''}`}>
-                            ₹{(customer.balance || 0).toFixed(0)}
+                            ₹{formatMoney(customer.balance)}
                         </h2>
                     </div>
                 </div>
@@ -206,16 +225,13 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                     </button>
                     <button
                         className="payment-btn"
-                        onClick={() => setShowPaymentForm(true)}
+                        onClick={() => openNewPayment('')}
                     >
                         <i className="fa-solid fa-wallet"></i> Add Payment
                     </button>
                     <button
                         className="settle-btn"
-                        onClick={() => {
-                            setPaymentAmount(customer.balance.toString());
-                            setShowPaymentForm(true);
-                        }}
+                        onClick={() => openNewPayment(roundMoney(customer.balance).toString())}
                         disabled={customer.balance <= 0}
                     >
                         <i className="fa-solid fa-check-double"></i> Full Settlement
@@ -251,7 +267,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                                             <tr key={bill.id}>
                                                 <td>{formatToDisplayDate(bill.date)}</td>
                                                 <td>#{bill.id}</td>
-                                                <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
+                                                <td className="bold">₹{formatMoney(bill.total_amount)}</td>
                                                 <td className="actions-cell">
                                                     <button className="view-btn" onClick={() => viewBillDetails(bill)}>View Bill</button>
                                                     <button 
@@ -282,6 +298,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                                         <tr>
                                             <th>Date</th>
                                             <th>Amount</th>
+                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -303,7 +320,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
             {showPaymentForm && (
                 <div className="modal-overlay">
                     <div className="modal-content">
-                        <h2>Record Payment / Settlement</h2>
+                        <h2>{editingPaymentId ? 'Edit Payment' : 'Record Payment / Settlement'}</h2>
                         <form onSubmit={handleAddPayment}>
                             <div className="form-group">
                                 <label>Amount (₹) *</label>
@@ -319,7 +336,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                                     <button
                                         type="button"
                                         className="settle-shortcut-btn"
-                                        onClick={() => setPaymentAmount(customer.balance.toString())}
+                                        onClick={() => setPaymentAmount(roundMoney(customer.balance).toString())}
                                     >
                                         Full Balance
                                     </button>
@@ -334,8 +351,8 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                                 />
                             </div>
                             <div className="modal-actions">
-                                <button type="button" className="cancel-btn" onClick={() => setShowPaymentForm(false)}>Cancel</button>
-                                <button type="submit" className="save-btn">Save Payment</button>
+                                <button type="button" className="cancel-btn" onClick={() => { setShowPaymentForm(false); setEditingPaymentId(null); }}>Cancel</button>
+                                <button type="submit" className="save-btn">{editingPaymentId ? 'Update Payment' : 'Save Payment'}</button>
                             </div>
                         </form>
                     </div>
@@ -437,15 +454,15 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                                             <tr key={idx}>
                                                 <td>{item.name_tamil || item.name_english}</td>
                                                 <td>{item.quantity}</td>
-                                                <td>₹{item.rate.toFixed(0)}</td>
-                                                <td>₹{(item.rate * item.quantity).toFixed(0)}</td>
+                                                <td>₹{formatMoney(item.rate)}</td>
+                                                <td>₹{formatMoney(item.rate * item.quantity)}</td>
                                             </tr>
                                         ))}
                                     </tbody>
                                     <tfoot>
                                         <tr className="bill-total-row">
                                             <td colSpan="3">TOTAL</td>
-                                            <td>₹{selectedBill.total_amount.toFixed(0)}</td>
+                                            <td>₹{formatMoney(selectedBill.total_amount)}</td>
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -455,6 +472,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                 </div>
             )}
 
+            {confirmDialog && <ConfirmDialog message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} />}
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
             {showSuccessModal && (
@@ -474,7 +492,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                         </div>
                         <h2>Delete Bill?</h2>
                         <p className="confirm-text">
-                            Are you sure you want to delete <strong>Bill #{billToDelete.id}</strong> worth <strong>₹{billToDelete.total_amount.toFixed(0)}</strong>?
+                            Are you sure you want to delete <strong>Bill #{billToDelete.id}</strong> worth <strong>₹{formatMoney(billToDelete.total_amount)}</strong>?
                             This will permanently remove it from the history and update the customer's balance.
                         </p>
                         <div className="modal-actions">

@@ -536,6 +536,24 @@ function setupIPCHandlers() {
     }
   });
 
+  ipcMain.handle('db:updateCreditPayment', async (event, paymentId, amount, date) => {
+    try {
+      return db.updateCreditPayment(paymentId, amount, date);
+    } catch (error) {
+      console.error('Error updating credit payment:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:deleteCreditPayment', async (event, paymentId) => {
+    try {
+      return db.deleteCreditPayment(paymentId);
+    } catch (error) {
+      console.error('Error deleting credit payment:', error);
+      throw error;
+    }
+  });
+
   // Delete credit customer
   ipcMain.handle('db:deleteCreditCustomer', async (event, id) => {
     try {
@@ -1491,8 +1509,8 @@ function generateBillHTML(billData) {
             <tr>
               <td class="item">${getItemPrintName(item, printLanguage)}</td>
               <td class="qty">${item.quantity}</td>
-              <td class="rate">${item.price.toFixed(0)}</td>
-              <td class="total">${(item.price * item.quantity).toFixed(0)}</td>
+              <td class="rate">${formatMoney(item.price)}</td>
+              <td class="total">${formatMoney(item.price * item.quantity)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1505,7 +1523,7 @@ function generateBillHTML(billData) {
         <div class="summary-line">Items: ${items.length} | Qty: ${totalQuantity}</div>
         <div class="summary-line-flex">
           <span class="left">Sub Total</span>
-          <span class="right">${total.toFixed(0)}</span>
+          <span class="right">${formatMoney(total)}</span>
         </div>
       </div>
       
@@ -1513,7 +1531,7 @@ function generateBillHTML(billData) {
       <div class="total-section">
         <div class="total-row">
           <span class="total-label">TOTAL</span>
-          <span class="total-amount bold">${total.toFixed(0)}</span>
+          <span class="total-amount bold">${formatMoney(total)}</span>
         </div>
       </div>
       
@@ -1764,7 +1782,7 @@ function generateCreditSummaryHTML(data) {
           ${bills.map(b => `
             <tr>
               <td>${b.bill_date.split('-').reverse().join('/')}</td>
-              <td class="text-right">${b.daily_total.toFixed(0)}</td>
+              <td class="text-right">${formatMoney(b.daily_total)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1772,7 +1790,7 @@ function generateCreditSummaryHTML(data) {
       
       <div class="total-section">
         <span class="total-label">TOTAL: </span>
-        <span class="total-amount">₹${total.toFixed(0)}</span>
+        <span class="total-amount">₹${formatMoney(total)}</span>
       </div>
       
       <div class="footer">

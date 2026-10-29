@@ -59,6 +59,26 @@ function validateAndRound(val, fieldName) {
 }
 
 /**
+ * Bill total computed from its item lines (rate rounded to the paisa x whole quantity).
+ * The stored bill total is always this value, so it can never disagree with the items.
+ */
+function billTotalFromItems(items, clientTotal) {
+  let paise = 0;
+  for (const item of items) {
+    const qty = Number(item.quantity);
+    if (!Number.isInteger(qty) || qty <= 0) {
+      throw new Error(`Invalid quantity for item ${item.id}: ${item.quantity}`);
+    }
+    paise += Math.round(validateAndRound(item.price, 'item.price') * 100) * qty;
+  }
+  const total = paise / 100;
+  if (Math.abs(total - clientTotal) > 0.001) {
+    logger.log(`[DB] Bill total corrected from ${clientTotal} to ${total} (sum of items)`, 'WARN');
+  }
+  return total;
+}
+
+/**
  * Helper: Get table structure info
  * Uses PRAGMA table_info() to safely check existing columns
  */
@@ -723,6 +743,7 @@ function saveBill(items, totalAmount, customerId = null, supplierId = null, cust
 
   // Validate monetary input — reject NaN, Infinity, negatives
   totalAmount = validateAndRound(totalAmount, 'totalAmount');
+  totalAmount = billTotalFromItems(items, totalAmount);
 
   // Ensure IDs are integers if provided
   const targetCustomerId = customerId ? parseInt(customerId, 10) : null;
@@ -857,6 +878,7 @@ function updateBill(billId, items, totalAmount, supplierId = null, customDate = 
 
   // Validate monetary input — reject NaN, Infinity, negatives
   totalAmount = validateAndRound(totalAmount, 'totalAmount');
+  totalAmount = billTotalFromItems(items, totalAmount);
 
   const database = ensureDb();
   const transaction = database.transaction((billItems) => {
@@ -1006,19 +1028,21 @@ function updateExpense(expenseId, description, amount, expenseDate = null) {
   return ensureDb().transaction(() => {
     const database = ensureDb();
     
-    // 1. Update the linked vendor transaction if it exists
-    if (expenseDate) {
+    // 1. Update the linked vendor payment if it exists.
+    // Its note is the part inside "Vendor Payment: Name (note)", not the whole expense text
+    // (copying the whole text nested it again on every edit)
+    const vendorLink = database.prepare(`
+      SELECT vt.id, vt.description, v.name FROM vendor_transactions vt
+      JOIN vendors v ON v.id = vt.vendor_id
+      WHERE vt.expense_id = ?
+    `).get(expenseId);
+    if (vendorLink) {
+      const note = linkedNoteFromExpense(description, `Vendor Payment: ${vendorLink.name}`, vendorLink.description);
       database.prepare(`
         UPDATE vendor_transactions 
-        SET amount = ?, description = ?, transaction_date = ?
-        WHERE expense_id = ?
-      `).run(amount, description, expenseDate, expenseId);
-    } else {
-      database.prepare(`
-        UPDATE vendor_transactions 
-        SET amount = ?, description = ?
-        WHERE expense_id = ?
-      `).run(amount, description, expenseId);
+        SET amount = ?, description = ?, transaction_date = COALESCE(?, transaction_date)
+        WHERE id = ?
+      `).run(amount, note, expenseDate, vendorLink.id);
     }
 
     // 2. Update the linked staff transaction if it exists
@@ -1030,10 +1054,26 @@ function updateExpense(expenseId, description, amount, expenseDate = null) {
       `).run(amount, description, expenseDate, expenseId);
     } else {
       database.prepare(`
-        UPDATE staff_transactions 
+        UPDATE staff_transactions
         SET amount = ?, description = ?
         WHERE expense_id = ?
       `).run(amount, description, expenseId);
+    }
+
+    // 2b. Update the linked employee payment (Staff page "Give Cash") so the employee balance matches.
+    // Its note is the part inside "Staff Payment: Name (note)"
+    const employeeLink = database.prepare(`
+      SELECT et.id, et.description, e.name FROM employee_transactions et
+      JOIN employees e ON e.id = et.employee_id
+      WHERE et.expense_id = ?
+    `).get(expenseId);
+    if (employeeLink) {
+      const note = linkedNoteFromExpense(description, `Staff Payment: ${employeeLink.name}`, employeeLink.description);
+      database.prepare(`
+        UPDATE employee_transactions
+        SET amount = ?, description = ?, transaction_date = COALESCE(?, transaction_date)
+        WHERE id = ?
+      `).run(amount, note, expenseDate, employeeLink.id);
     }
 
     // 3. Update the expense itself
@@ -1052,6 +1092,20 @@ function updateExpense(expenseId, description, amount, expenseDate = null) {
     }
     return 1;
   })();
+}
+
+/**
+ * Note for a vendor/staff payment from its linked expense text.
+ * "Vendor Payment: Ravi (rice)" -> "rice", "Vendor Payment: Ravi" -> "".
+ * If the text was changed to something else entirely, the existing note is kept.
+ */
+function linkedNoteFromExpense(expenseDescription, prefix, currentNote) {
+  const text = (expenseDescription || '').trim();
+  if (text === prefix) return '';
+  if (text.startsWith(prefix + ' (') && text.endsWith(')')) {
+    return text.slice(prefix.length + 2, -1);
+  }
+  return currentNote;
 }
 
 /**
@@ -1076,6 +1130,10 @@ function deleteExpense(expenseId) {
       
       const sRes = database.prepare('DELETE FROM staff_transactions WHERE expense_id = ?').run(eId);
       if (sRes.changes > 0) logger.log(`   - Deleted ${sRes.changes} linked staff transactions`, "INFO");
+
+      // Employee payment ("Give Cash" on the Staff page) is the same money: remove it too
+      const eRes = database.prepare('DELETE FROM employee_transactions WHERE expense_id = ?').run(eId);
+      if (eRes.changes > 0) logger.log(`   - Deleted ${eRes.changes} linked employee payments`, "INFO");
       
       // 2. Now delete the expense itself
       const result = database.prepare('DELETE FROM expenses WHERE id = ?').run(eId);
@@ -1734,12 +1792,14 @@ function deleteSupplier(id) {
 function getSupplierWiseSales(startDate, endDate, supplierId = null) {
   let query = `
     SELECT
-    s.name as supplier_name,
+      s.id as supplier_id,
+      s.name as supplier_name,
       s.is_deleted,
       COUNT(b.id) as bill_count,
       SUM(b.total_amount) as total_sales
     FROM bills b
-    JOIN suppliers s ON b.supplier_id = s.id
+    -- LEFT JOIN: bills with no staff are kept as one "Unassigned" row, so the rows add up to total sales
+    LEFT JOIN suppliers s ON b.supplier_id = s.id
     WHERE DATE(b.created_at) >= ? AND DATE(b.created_at) <= ?
       `;
 

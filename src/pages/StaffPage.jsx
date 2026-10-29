@@ -5,6 +5,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Footer from '../components/Footer';
 import { formatToDisplayDate, getTodayLocaleDate } from '../utils/DateUtils';
 import './StaffPage.css';
+import { formatMoney, roundMoney } from '../utils/money';
 
 function StaffPage({ onNavigate }) {
     const [isLoading, setIsLoading] = useState(false);
@@ -225,8 +226,12 @@ function StaffPage({ onNavigate }) {
                                                     {s.name}
                                                     {!s.is_active && <span className="discharged-tag">Discharged</span>}
                                                 </td>
+                                                <td className="wage-cell">
+                                                    {s.daily_wage > 0 ? `₹${formatMoney(s.daily_wage, { grouping: true })}/day` : '-'}
+                                                    {s.auto_wage === 1 && s.daily_wage > 0 && <span className="auto-tag">AUTO</span>}
+                                                </td>
                                                 <td className={`amount-cell balance text-right ${s.balance > 0 ? 'pending' : ''}`}>
-                                                    ₹{s.balance?.toLocaleString()}
+                                                    ₹{formatMoney(s.balance, { grouping: true })}
                                                 </td>
                                                 <td className="text-center actions-column" onClick={(e) => e.stopPropagation()}>
                                                     <button className="icon-btn edit" onClick={() => { setEditingStaff({ ...s }); setShowEditStaffForm(true); }}>
@@ -265,11 +270,21 @@ function StaffPage({ onNavigate }) {
                                     {selectedStaffDetail.name}
                                     {!selectedStaffDetail.is_active && <span className="discharged-tag big">Discharged</span>}
                                 </h1>
+                                <p className="staff-wage-info">
+                                    {selectedStaffDetail.daily_wage > 0
+                                        ? `₹${formatMoney(selectedStaffDetail.daily_wage, { grouping: true })}/day`
+                                        : 'No daily wage set'}
+                                    {selectedStaffDetail.auto_wage === 1 && selectedStaffDetail.daily_wage > 0 && (
+                                        <span className="auto-tag">
+                                            AUTO{selectedStaffDetail.wage_start_date ? ` from ${formatToDisplayDate(selectedStaffDetail.wage_start_date)}` : ''}
+                                        </span>
+                                    )}
+                                </p>
                             </div>
                             <div className="staff-balance-card">
                                 <span className="bal-label">Total Payable</span>
                                 <h2 className={`bal-value ${selectedStaffDetail.balance > 0 ? 'pending' : ''}`}>
-                                    ₹{selectedStaffDetail.balance?.toLocaleString()}
+                                    ₹{formatMoney(selectedStaffDetail.balance, { grouping: true })}
                                 </h2>
                             </div>
                         </div>
@@ -298,7 +313,7 @@ function StaffPage({ onNavigate }) {
                             <button className="action-btn settle-btn" disabled={selectedStaffDetail.balance <= 0} onClick={() => { 
                                 setTransactionType('PAYMENT'); 
                                 setEditingTransactionId(null); 
-                                setTransAmount(selectedStaffDetail.balance.toString()); 
+                                setTransAmount(roundMoney(selectedStaffDetail.balance).toString()); 
                                 setTransDesc('Salary Settlement'); 
                                 setTransDate(getTodayLocaleDate());
                                 setShowTransactionForm(true); 
@@ -355,7 +370,7 @@ function StaffPage({ onNavigate }) {
                                                 </td>
                                                 <td>{t.description || '-'}</td>
                                                 <td className={t.type === 'WAGE' ? 'amt-wage' : 'amt-payment'}>
-                                                    ₹{t.amount.toLocaleString()}
+                                                    ₹{formatMoney(t.amount, { grouping: true })}
                                                 </td>
                                                 <td>
                                                     <div className="actions-cell">

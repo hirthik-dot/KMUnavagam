@@ -4,6 +4,7 @@ import Footer from '../components/Footer';
 import Toast from '../components/Toast';
 import { getTodayLocaleDate } from '../utils/DateUtils';
 import './RecordsPage.css';
+import { formatMoney } from '../utils/money';
 
 /**
  * RECORDS PAGE
@@ -359,23 +360,23 @@ function RecordsPage({ onNavigate }) {
                     <div className="summary-cards">
                         <div className="summary-card total">
                             <div className="card-label">Total Sales</div>
-                            <div className="card-value">₹{totals.totalSales.toFixed(0)}</div>
+                            <div className="card-value">₹{formatMoney(totals.totalSales)}</div>
                         </div>
                         <div className="summary-card sales">
                             <div className="card-label">Cash Sales</div>
-                            <div className="card-value">₹{totals.totalCashSales.toFixed(0)}</div>
+                            <div className="card-value">₹{formatMoney(totals.totalCashSales)}</div>
                         </div>
                         <div className="summary-card credit">
                             <div className="card-label">Credit Sales</div>
-                            <div className="card-value">₹{totals.totalCreditSales.toFixed(0)}</div>
+                            <div className="card-value">₹{formatMoney(totals.totalCreditSales)}</div>
                         </div>
                         <div className="summary-card expenses">
                             <div className="card-label">Total Expenses</div>
-                            <div className="card-value">₹{totals.totalExpenses.toFixed(0)}</div>
+                            <div className="card-value">₹{formatMoney(totals.totalExpenses)}</div>
                         </div>
                         <div className="summary-card profit">
                             <div className="card-label">Net Profit</div>
-                            <div className="card-value">₹{totals.totalProfit.toFixed(0)}</div>
+                            <div className="card-value">₹{formatMoney(totals.totalProfit)}</div>
                         </div>
                     </div>
                 )}
@@ -444,7 +445,7 @@ function RecordsPage({ onNavigate }) {
                                                                 {bill.bill_type}
                                                             </span>
                                                         </td>
-                                                        <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
+                                                        <td className="bold">₹{formatMoney(bill.total_amount)}</td>
                                                         <td>
                                                             <div className="action-buttons">
                                                                 <button
@@ -495,7 +496,7 @@ function RecordsPage({ onNavigate }) {
                                                 {dayDetails.expenses.map((expense) => (
                                                     <tr key={expense.id}>
                                                         <td>{expense.description}</td>
-                                                        <td className="expenses-cell">₹{expense.amount.toFixed(0)}</td>
+                                                        <td className="expenses-cell">₹{formatMoney(expense.amount)}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -521,10 +522,10 @@ function RecordsPage({ onNavigate }) {
                                 {records.map((record) => (
                                     <tr key={record.date} onClick={() => loadDayDetails(record.date)} className="clickable-row">
                                         <td className="date-cell">{formatDisplayDate(record.date)}</td>
-                                        <td className="sales-cell">₹{record.cash_sales?.toFixed(0) || 0}</td>
-                                        <td className="credit-cell">₹{record.credit_sales?.toFixed(0) || 0}</td>
-                                        <td className="expenses-cell">₹{record.total_expenses.toFixed(0)}</td>
-                                        <td className={`profit-cell ${record.profit >= 0 ? 'positive' : 'negative'}`}>₹{record.profit.toFixed(0)}</td>
+                                        <td className="sales-cell">₹{formatMoney(record.cash_sales)}</td>
+                                        <td className="credit-cell">₹{formatMoney(record.credit_sales)}</td>
+                                        <td className="expenses-cell">₹{formatMoney(record.total_expenses)}</td>
+                                        <td className={`profit-cell ${record.profit >= 0 ? 'positive' : 'negative'}`}>₹{formatMoney(record.profit)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -581,7 +582,7 @@ function RecordsPage({ onNavigate }) {
                                                                 </>
                                                             ) : '-'}
                                                         </td>
-                                                        <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
+                                                        <td className="bold">₹{formatMoney(bill.total_amount)}</td>
                                                         <td>
                                                             <div className="action-buttons">
                                                                 <button
@@ -630,7 +631,7 @@ function RecordsPage({ onNavigate }) {
                                                 {dayDetails.expenses.map((expense) => (
                                                     <tr key={expense.id}>
                                                         <td>{expense.description}</td>
-                                                        <td>₹{expense.amount.toFixed(0)}</td>
+                                                        <td>₹{formatMoney(expense.amount)}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -643,15 +644,15 @@ function RecordsPage({ onNavigate }) {
                             <div className="modal-summary">
                                 <div className="summary-item">
                                     <span className="summary-label">Total Sales:</span>
-                                    <span className="summary-value sales">₹{dayDetails.bills.reduce((sum, bill) => sum + bill.total_amount, 0).toFixed(0)}</span>
+                                    <span className="summary-value sales">₹{formatMoney(dayDetails.bills.reduce((sum, bill) => sum + bill.total_amount, 0))}</span>
                                 </div>
                                 <div className="summary-item">
                                     <span className="summary-label">Total Expenses:</span>
-                                    <span className="summary-value expenses">₹{dayDetails.expenses.reduce((sum, exp) => sum + exp.amount, 0).toFixed(0)}</span>
+                                    <span className="summary-value expenses">₹{formatMoney(dayDetails.expenses.reduce((sum, exp) => sum + exp.amount, 0))}</span>
                                 </div>
                                 <div className="summary-item profit">
                                     <span className="summary-label">Net Profit:</span>
-                                    <span className="summary-value">₹{(dayDetails.bills.reduce((sum, bill) => sum + bill.total_amount, 0) - dayDetails.expenses.reduce((sum, exp) => sum + exp.amount, 0)).toFixed(0)}</span>
+                                    <span className="summary-value">₹{formatMoney((dayDetails.bills.reduce((sum, bill) => sum + bill.total_amount, 0) - dayDetails.expenses.reduce((sum, exp) => sum + exp.amount, 0)))}</span>
                                 </div>
                             </div>
                         </div>
@@ -714,15 +715,15 @@ function RecordsPage({ onNavigate }) {
                                             <tr key={idx}>
                                                 <td>{item.name_tamil || item.name_english}</td>
                                                 <td>{item.quantity}</td>
-                                                <td>₹{item.rate.toFixed(0)}</td>
-                                                <td>₹{(item.rate * item.quantity).toFixed(0)}</td>
+                                                <td>₹{formatMoney(item.rate)}</td>
+                                                <td>₹{formatMoney(item.rate * item.quantity)}</td>
                                             </tr>
                                         ))}
                                     </tbody>
                                     <tfoot>
                                         <tr className="bill-total-row">
                                             <td colSpan="3">TOTAL</td>
-                                            <td>₹{selectedBill.total_amount.toFixed(0)}</td>
+                                            <td>₹{formatMoney(selectedBill.total_amount)}</td>
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -740,7 +741,7 @@ function RecordsPage({ onNavigate }) {
                             <button className="close-btn" onClick={() => setBillToDelete(null)}>✕</button>
                         </div>
                         <div className="modal-body">
-                            <p>Are you sure you want to delete <strong>Bill #{billToDelete.id}</strong> (₹{billToDelete.total_amount.toFixed(0)})?</p>
+                            <p>Are you sure you want to delete <strong>Bill #{billToDelete.id}</strong> (₹{formatMoney(billToDelete.total_amount)})?</p>
                             <p className="danger-text">This action cannot be undone and will remove the record from all history and account balances.</p>
                         </div>
                         <div className="modal-actions">

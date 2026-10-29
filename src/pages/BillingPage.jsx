@@ -8,6 +8,7 @@ import SupplierModal from '../components/SupplierModal';
 import { getTodayLocaleDate } from '../utils/DateUtils';
 import { DISPLAY_LANGUAGE_SETTING_KEY, DEFAULT_DISPLAY_LANGUAGE } from '../utils/itemLanguage';
 import './BillingPage.css';
+import { roundMoney } from '../utils/money';
 
 function BillingPage({ onNavigate, creditCustomer }) {
     const [foodItems, setFoodItems] = useState([]);
@@ -198,7 +199,8 @@ function BillingPage({ onNavigate, creditCustomer }) {
      * Calculate total amount
      */
     function calculateTotal() {
-        return cart.reduce((total, item) => total + item.price * item.quantity, 0);
+        // Exact to the paisa (removes float noise from summing decimals)
+        return roundMoney(cart.reduce((total, item) => total + item.price * item.quantity, 0));
     }
 
     /**

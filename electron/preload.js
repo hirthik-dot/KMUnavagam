@@ -128,6 +128,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addCreditPayment: (customerId, amount, date) =>
         ipcRenderer.invoke('db:addCreditPayment', customerId, amount, date),
 
+    // Correct or remove a credit payment
+    updateCreditPayment: (paymentId, amount, date) =>
+        ipcRenderer.invoke('db:updateCreditPayment', paymentId, amount, date),
+    deleteCreditPayment: (paymentId) =>
+        ipcRenderer.invoke('db:deleteCreditPayment', paymentId),
+
     // Delete credit customer
     deleteCreditCustomer: (id) =>
         ipcRenderer.invoke('db:deleteCreditCustomer', id),

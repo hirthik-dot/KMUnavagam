@@ -394,7 +394,7 @@ function AdminPage({ onNavigate }) {
         }
 
         const price = parseFloat(editFormData.price);
-        if (isNaN(price)) {
+        if (isNaN(price) || price <= 0) {
             showToast('Please enter a valid price!', 'warning');
             return;
         }
