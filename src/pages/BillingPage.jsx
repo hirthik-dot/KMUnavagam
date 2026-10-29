@@ -56,6 +56,12 @@ function BillingPage({ onNavigate, creditCustomer }) {
             if (creditCustomer.billDate) {
                 setBillDate(creditCustomer.billDate);
             }
+            setLastSupplierId(creditCustomer.supplierId || null);
+        }
+        if (creditCustomer?.editMode && creditCustomer?.supplierId) {
+            window.electronAPI.getSuppliersForReports()
+                .then((all) => setOriginalStaff(all.find((s) => s.id === creditCustomer.supplierId) || null))
+                .catch((err) => console.error('Error loading original staff:', err));
         }
     }, [creditCustomer]);
 

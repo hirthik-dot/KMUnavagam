@@ -198,6 +198,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAllSuppliersAdmin: () =>
         ipcRenderer.invoke('db:getAllSuppliersAdmin'),
 
+    // Staff for the Records staff-wise filter (includes discharged / deleted)
+    getSuppliersForReports: () =>
+        ipcRenderer.invoke('db:getSuppliersForReports'),
+
     // Add a new supplier (staff)
     addSupplier: (name, dailyWage) =>
         ipcRenderer.invoke('db:addSupplier', name, dailyWage),
@@ -217,8 +221,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ========== STAFF MAINTENANCE ==========
     getStaffList: (includeInactive) => ipcRenderer.invoke('db:getStaffList', includeInactive),
     getStaffDetails: (staffId) => ipcRenderer.invoke('db:getStaffDetails', staffId),
-    addEmployee: (name, dailyWage) => ipcRenderer.invoke('db:addEmployee', name, dailyWage),
-    updateEmployee: (id, name, dailyWage, isActive) => ipcRenderer.invoke('db:updateEmployee', id, name, dailyWage, isActive),
+    addEmployee: (name, dailyWage, autoWage, wageStartDate, staffType) =>
+        ipcRenderer.invoke('db:addEmployee', name, dailyWage, autoWage, wageStartDate, staffType),
+    updateEmployee: (id, name, dailyWage, isActive, autoWage, wageStartDate, staffType) =>
+        ipcRenderer.invoke('db:updateEmployee', id, name, dailyWage, isActive, autoWage, wageStartDate, staffType),
+
+    // Auto daily wages
+    getPendingWageDays: () => ipcRenderer.invoke('wages:getPendingDays'),
+    resolvePendingWageDays: (datesToCredit) => ipcRenderer.invoke('wages:resolvePendingDays', datesToCredit),
+    markEmployeeAbsent: (employeeId, date) => ipcRenderer.invoke('wages:markAbsent', employeeId, date),
+    markShopHoliday: (date) => ipcRenderer.invoke('wages:markHoliday', date),
+    removeWageSkip: (employeeId, date) => ipcRenderer.invoke('wages:removeSkip', employeeId, date),
     deleteEmployee: (id) => ipcRenderer.invoke('db:deleteEmployee', id),
     addStaffTransaction: (staffId, amount, type, description, date) =>
         ipcRenderer.invoke('db:addStaffTransaction', staffId, amount, type, description, date),

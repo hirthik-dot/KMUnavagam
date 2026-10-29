@@ -705,6 +705,15 @@ function setupIPCHandlers() {
   });
 
   // Get all suppliers (admin)
+  ipcMain.handle('db:getSuppliersForReports', async () => {
+    try {
+      return db.getSuppliersForReports();
+    } catch (error) {
+      console.error('Error getting staff for reports:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('db:getAllSuppliersAdmin', async () => {
     try {
       return db.getAllSuppliersAdmin();
@@ -754,18 +763,18 @@ function setupIPCHandlers() {
     }
   });
 
-  ipcMain.handle('db:addEmployee', async (event, name, dailyWage) => {
+  ipcMain.handle('db:addEmployee', async (event, name, dailyWage, autoWage, wageStartDate, staffType) => {
     try {
-      return db.addEmployee(name, dailyWage);
+      return db.addEmployee(name, dailyWage, autoWage, wageStartDate, staffType);
     } catch (error) {
       console.error('Error adding employee:', error);
       throw error;
     }
   });
 
-  ipcMain.handle('db:updateEmployee', async (event, id, name, dailyWage, isActive) => {
+  ipcMain.handle('db:updateEmployee', async (event, id, name, dailyWage, isActive, autoWage, wageStartDate, staffType) => {
     try {
-      return db.updateEmployee(id, name, dailyWage, isActive);
+      return db.updateEmployee(id, name, dailyWage, isActive, autoWage, wageStartDate, staffType);
     } catch (error) {
       console.error('Error updating employee:', error);
       throw error;

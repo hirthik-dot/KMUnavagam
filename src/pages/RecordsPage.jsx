@@ -36,7 +36,8 @@ function RecordsPage({ onNavigate }) {
     useEffect(() => {
         const fetchSuppliers = async () => {
             try {
-                const data = await window.electronAPI.getAllSuppliers();
+                // Includes discharged / deleted staff so their past sales can still be filtered
+                const data = await window.electronAPI.getSuppliersForReports();
                 setSuppliers(data);
             } catch (err) {
                 console.error('Error fetching suppliers:', err);
@@ -339,7 +340,9 @@ function RecordsPage({ onNavigate }) {
                             >
                                 <option value="">All Suppliers</option>
                                 {suppliers.map(s => (
-                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                    <option key={s.id} value={s.id}>
+                                        {s.name}{s.is_deleted ? ' (deleted)' : !s.is_active ? ' (inactive)' : ''}
+                                    </option>
                                 ))}
                             </select>
                         </div>
