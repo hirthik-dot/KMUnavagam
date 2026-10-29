@@ -30,6 +30,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteItem: (id) =>
         ipcRenderer.invoke('db:deleteItem', id),
 
+    // ========== APP INFO ==========
+
+    // Installed version, e.g. "1.0.3"
+    getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+
+    // ========== SETTINGS ==========
+
+    // Get an app setting (e.g. 'printLanguage')
+    getSetting: (key, defaultValue) =>
+        ipcRenderer.invoke('db:getSetting', key, defaultValue),
+
+    // Save an app setting
+    setSetting: (key, value) =>
+        ipcRenderer.invoke('db:setSetting', key, value),
+
     // ========== BILLS ==========
 
     // Save a bill to database

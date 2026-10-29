@@ -1165,6 +1165,9 @@ function setupIPCHandlers() {
 
   // ========== SYSTEM OPERATIONS ==========
 
+  // Installed app version (package.json "version", bumped on every build:win) — shown in the footer
+  ipcMain.handle('app:getVersion', () => app.getVersion());
+
   ipcMain.handle('system:backupDatabase', async () => {
     try {
       const { filePath } = await dialog.showSaveDialog({
