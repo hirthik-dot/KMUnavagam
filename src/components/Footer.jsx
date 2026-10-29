@@ -1,6 +1,16 @@
+import { useState, useEffect } from 'react';
 import './Footer.css';
 
 function Footer() {
+    // Shown so anyone can tell which build is installed
+    const [version, setVersion] = useState('');
+
+    useEffect(() => {
+        window.electronAPI?.getAppVersion?.()
+            .then((v) => setVersion(v || ''))
+            .catch(() => setVersion(''));
+    }, []);
+
     return (
         <footer className="app-footer">
             <div className="footer-container">
@@ -38,7 +48,10 @@ function Footer() {
                 </div>
 
                 <div className="footer-bottom">
-                    <p className="copyright-text">© {new Date().getFullYear()} LancingHub. All Rights Reserved.</p>
+                    <p className="copyright-text">
+                        © {new Date().getFullYear()} LancingHub. All Rights Reserved.
+                        {version && <span className="app-version"> · Version {version}</span>}
+                    </p>
                 </div>
             </div>
         </footer>

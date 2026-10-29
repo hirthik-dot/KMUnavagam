@@ -3,6 +3,13 @@ import PageHeader from '../components/PageHeader';
 import Toast from '../components/Toast';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Footer from '../components/Footer';
+import {
+    PRINT_LANGUAGES,
+    PRINT_LANGUAGE_SETTING_KEY,
+    DEFAULT_PRINT_LANGUAGE,
+    DISPLAY_LANGUAGE_SETTING_KEY,
+    DEFAULT_DISPLAY_LANGUAGE,
+} from '../utils/itemLanguage';
 import './AdminPage.css';
 
 function AdminPage({ onNavigate }) {
@@ -14,18 +21,17 @@ function AdminPage({ onNavigate }) {
     const [editingCategory, setEditingCategory] = useState(null);
     const [newCategoryName, setNewCategoryName] = useState('');
 
-    const [suppliers, setSuppliers] = useState([]);
-    const [editingSupplier, setEditingSupplier] = useState(null);
-    const [newSupplierName, setNewSupplierName] = useState('');
-
     const [categoryFilter, setCategoryFilter] = useState('All');
     const [toast, setToast] = useState(null);
     const [confirmDialog, setConfirmDialog] = useState(null);
+    const [printLanguage, setPrintLanguage] = useState(DEFAULT_PRINT_LANGUAGE);
+    const [displayLanguage, setDisplayLanguage] = useState(DEFAULT_DISPLAY_LANGUAGE);
 
     // Form state for NEW item
     const [formData, setFormData] = useState({
         nameTamil: '',
         nameEnglish: '',
+        nameHindi: '',
         price: '',
         category: 'Other',
         imagePath: '',
@@ -35,6 +41,7 @@ function AdminPage({ onNavigate }) {
     const [editFormData, setEditFormData] = useState({
         nameTamil: '',
         nameEnglish: '',
+        nameHindi: '',
         price: '',
         category: 'Other',
         imagePath: '',
@@ -44,9 +51,50 @@ function AdminPage({ onNavigate }) {
     useEffect(() => {
         loadItems();
         loadCategories();
-        loadSuppliers();
+        loadLanguageSettings();
     }, []);
 
+    /**
+     * Load default bill print language and screen display language
+     */
+    async function loadLanguageSettings() {
+        try {
+            const printLang = await window.electronAPI.getSetting(PRINT_LANGUAGE_SETTING_KEY, DEFAULT_PRINT_LANGUAGE);
+            setPrintLanguage(printLang || DEFAULT_PRINT_LANGUAGE);
+            const displayLang = await window.electronAPI.getSetting(DISPLAY_LANGUAGE_SETTING_KEY, DEFAULT_DISPLAY_LANGUAGE);
+            setDisplayLanguage(displayLang || DEFAULT_DISPLAY_LANGUAGE);
+        } catch (error) {
+            console.error('Error loading language settings:', error);
+        }
+    }
+
+    /**
+     * Save screen display language (item names on Billing page and Cart)
+     */
+    async function handleDisplayLanguageChange(lang) {
+        try {
+            await window.electronAPI.setSetting(DISPLAY_LANGUAGE_SETTING_KEY, lang);
+            setDisplayLanguage(lang);
+            showToast('Display language saved!');
+        } catch (error) {
+            console.error('Error saving display language:', error);
+            showToast('Failed to save display language.', 'error');
+        }
+    }
+
+    /**
+     * Save default bill print language
+     */
+    async function handlePrintLanguageChange(lang) {
+        try {
+            await window.electronAPI.setSetting(PRINT_LANGUAGE_SETTING_KEY, lang);
+            setPrintLanguage(lang);
+            showToast('Default print language saved!');
+        } catch (error) {
+            console.error('Error saving print language:', error);
+            showToast('Failed to save print language.', 'error');
+        }
+    }
 
     /**
      * Load all food items (including inactive ones)
@@ -149,88 +197,6 @@ function AdminPage({ onNavigate }) {
     }
 
     /**
-     * Load all suppliers
-     */
-    async function loadSuppliers() {
-        try {
-            const allSuppliers = await window.electronAPI.getAllSuppliersAdmin();
-            setSuppliers(allSuppliers);
-        } catch (error) {
-            console.error('Error loading suppliers:', error);
-            showToast('Failed to load suppliers.', 'error');
-        }
-    }
-
-    /**
-     * Add a new supplier
-     */
-    async function handleAddSupplier() {
-        if (!newSupplierName.trim()) {
-            showToast('Please enter a supplier name!', 'warning');
-            return;
-        }
-
-        try {
-            await window.electronAPI.addSupplier(newSupplierName.trim(), 0);
-            setNewSupplierName('');
-            loadSuppliers();
-            showToast('Staff added successfully!');
-        } catch (error) {
-            console.error('Error adding supplier:', error);
-            showToast('Failed to add staff.', 'error');
-        }
-    }
-
-    /**
-     * Update a supplier
-     */
-    async function handleUpdateSupplier(id, newName, dailyWage, isActive) {
-        if (!newName.trim()) {
-            showToast('Staff name cannot be empty!', 'warning');
-            return;
-        }
-
-        // Save scroll position before update
-        const scrollY = window.scrollY;
-
-        try {
-            await window.electronAPI.updateSupplier(id, newName.trim(), 0, isActive);
-            setEditingSupplier(null);
-            await loadSuppliers();
-            showToast('Staff updated successfully!');
-
-            // Restore scroll position after state update
-            requestAnimationFrame(() => {
-                window.scrollTo(0, scrollY);
-            });
-        } catch (error) {
-            console.error('Error updating supplier:', error);
-            showToast('Failed to update staff.', 'error');
-        }
-    }
-
-    /**
-     * Delete a supplier
-     */
-    async function handleDeleteSupplier(id, name) {
-        setConfirmDialog({
-            message: `Are you sure you want to delete "${name}"?`,
-            onConfirm: async () => {
-                setConfirmDialog(null);
-                try {
-                    await window.electronAPI.deleteSupplier(id);
-                    loadSuppliers();
-                    showToast('Supplier deleted successfully!');
-                } catch (error) {
-                    console.error('Error deleting supplier:', error);
-                    showToast('Failed to delete supplier.', 'error');
-                }
-            },
-            onCancel: () => setConfirmDialog(null)
-        });
-    }
-
-    /**
      * Handle form input changes
      */
     function handleInputChange(e) {
@@ -301,7 +267,8 @@ function AdminPage({ onNavigate }) {
                 formData.nameEnglish,
                 price,
                 formData.imagePath || null,
-                formData.category
+                formData.category,
+                formData.nameHindi.trim() || null
             );
             showToast('Item added successfully!');
 
@@ -309,6 +276,7 @@ function AdminPage({ onNavigate }) {
             setFormData({
                 nameTamil: '',
                 nameEnglish: '',
+                nameHindi: '',
                 price: '',
                 category: 'Other',
                 imagePath: '',
@@ -340,7 +308,7 @@ function AdminPage({ onNavigate }) {
         }
 
         const price = parseFloat(editFormData.price);
-        if (isNaN(price)) {
+        if (isNaN(price) || price <= 0) {
             showToast('Please enter a valid price!', 'warning');
             return;
         }
@@ -352,7 +320,8 @@ function AdminPage({ onNavigate }) {
                 editFormData.nameEnglish,
                 price,
                 editFormData.imagePath || null,
-                editFormData.category
+                editFormData.category,
+                editFormData.nameHindi.trim() || null
             );
             showToast('Item updated successfully!');
             setEditingItem(null);
@@ -371,6 +340,7 @@ function AdminPage({ onNavigate }) {
         setEditFormData({
             nameTamil: item.name_tamil,
             nameEnglish: item.name_english,
+            nameHindi: item.name_hindi || '',
             price: item.price.toString(),
             category: item.category || 'Other',
             imagePath: item.image_path || '',
@@ -385,6 +355,7 @@ function AdminPage({ onNavigate }) {
         setFormData({
             nameTamil: '',
             nameEnglish: '',
+            nameHindi: '',
             price: '',
             category: 'Other',
             imagePath: '',
@@ -433,6 +404,8 @@ function AdminPage({ onNavigate }) {
             onCancel: () => setConfirmDialog(null)
         });
     }
+
+    const missingHindiCount = items.filter(item => item.is_active && !item.name_hindi).length;
 
     // Filter items based on category selection
     const filteredItems = categoryFilter === 'All'
@@ -483,6 +456,18 @@ function AdminPage({ onNavigate }) {
                                 onChange={(e) => setFormData({ ...formData, nameEnglish: e.target.value })}
                                 placeholder="Dosa"
                                 required
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="nameHindi">Hindi Name (Optional)</label>
+                            <input
+                                type="text"
+                                id="nameHindi"
+                                name="nameHindi"
+                                value={formData.nameHindi}
+                                onChange={(e) => setFormData({ ...formData, nameHindi: e.target.value })}
+                                placeholder="डोसा"
                             />
                         </div>
 
@@ -646,85 +631,49 @@ function AdminPage({ onNavigate }) {
                     </div>
                 </div>
 
-                {/* Staff Management Section */}
-                <div className="staff-management-section card">
+                {/* Language Settings Section (screen display + bill print) */}
+                <div className="print-settings-section card">
                     <h2 className="section-title">
-                        <i className="fas fa-user-tie"></i> Manage Service Staff
+                        <i className="fas fa-language"></i> Item Name Language
                     </h2>
 
-                    {/* Add New Staff */}
-                    <div className="add-category-form staff-add-form" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px' }}>
-                        <input
-                            type="text"
-                            placeholder="Staff name..."
-                            value={newSupplierName}
-                            onChange={(e) => setNewSupplierName(e.target.value)}
-                        />
-                        <button className="btn-primary" onClick={handleAddSupplier}>
-                            <i className="fas fa-plus"></i> Add Staff
-                        </button>
+                    <h3 className="language-setting-title">Screen Display</h3>
+                    <p className="print-settings-hint">
+                        Language of the big item name on the Billing page and Cart. If an item has no Hindi name, it shows in English with Tamil underneath.
+                    </p>
+                    <div className="print-language-options">
+                        {PRINT_LANGUAGES.map((lang) => (
+                            <button
+                                key={lang.code}
+                                type="button"
+                                className={`print-language-option ${displayLanguage === lang.code ? 'active' : ''}`}
+                                onClick={() => handleDisplayLanguageChange(lang.code)}
+                            >
+                                {lang.label}
+                            </button>
+                        ))}
                     </div>
 
-                    {/* Staff List */}
-                    <div className="category-list">
-                        {suppliers.map((supplier) => (
-                            <div key={supplier.id} className="category-item">
-                                {editingSupplier === supplier.id ? (
-                                    <div className="category-edit-container staff-edit-container" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px', width: '100%' }}>
-                                        <input
-                                            type="text"
-                                            id={`edit-staff-name-${supplier.id}`}
-                                            defaultValue={supplier.name}
-                                            autoFocus
-                                        />
-                                        <div className="category-actions">
-                                            <button
-                                                className="btn-success"
-                                                onClick={() => {
-                                                    const nameVal = document.getElementById(`edit-staff-name-${supplier.id}`).value;
-                                                    handleUpdateSupplier(supplier.id, nameVal, 0, supplier.is_active);
-                                                }}
-                                            >
-                                                <i className="fas fa-check"></i>
-                                            </button>
-                                            <button
-                                                className="btn-secondary"
-                                                onClick={() => setEditingSupplier(null)}
-                                            >
-                                                <i className="fas fa-times"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <span className={`category-name ${!supplier.is_active ? 'inactive-text' : ''}`} title={supplier.name}>
-                                            <i className="fas fa-user"></i> {supplier.name} 
-                                            {!supplier.is_active && ' (Inactive)'}
-                                        </span>
-                                        <div className="category-actions">
-                                            <button
-                                                className={`btn-toggle ${supplier.is_active ? 'active' : 'inactive'}`}
-                                                onClick={() => handleUpdateSupplier(supplier.id, supplier.name, 0, !supplier.is_active)}
-                                                title={supplier.is_active ? 'Deactivate' : 'Activate'}
-                                            >
-                                                <i className={`fas fa-${supplier.is_active ? 'eye' : 'eye-slash'}`}></i>
-                                            </button>
-                                            <button
-                                                className="btn-edit"
-                                                onClick={() => setEditingSupplier(supplier.id)}
-                                            >
-                                                <i className="fas fa-edit"></i> Edit
-                                            </button>
-                                            <button
-                                                className="btn-delete"
-                                                onClick={() => handleDeleteSupplier(supplier.id, supplier.name)}
-                                            >
-                                                <i className="fas fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
+                    {missingHindiCount > 0 && (
+                        <p className="missing-hindi-note">
+                            <i className="fas fa-circle-info"></i> {missingHindiCount} active item{missingHindiCount === 1 ? '' : 's'} {missingHindiCount === 1 ? 'has' : 'have'} no Hindi name yet. Add it with Edit on the item below.
+                        </p>
+                    )}
+
+                    <h3 className="language-setting-title">Bill &amp; KOT Print</h3>
+                    <p className="print-settings-hint">
+                        Default language for item names on the bill and KOT. You can still change it for a single bill on the Print Preview screen. Items without a name in the chosen language print in English.
+                    </p>
+                    <div className="print-language-options">
+                        {PRINT_LANGUAGES.map((lang) => (
+                            <button
+                                key={lang.code}
+                                type="button"
+                                className={`print-language-option ${printLanguage === lang.code ? 'active' : ''}`}
+                                onClick={() => handlePrintLanguageChange(lang.code)}
+                            >
+                                {lang.label}
+                            </button>
                         ))}
                     </div>
                 </div>
@@ -787,6 +736,9 @@ function AdminPage({ onNavigate }) {
                                     <div className="item-info">
                                         <h3 className="item-name-tamil">{item.name_tamil}</h3>
                                         <p className="item-name-english">{item.name_english}</p>
+                                        {item.name_hindi && (
+                                            <p className="item-name-english">{item.name_hindi}</p>
+                                        )}
                                         <p className="item-price">₹{item.price.toFixed(2)}</p>
                                         <p className="item-category">
                                             <i className="fas fa-tag"></i> {item.category || 'Other'}
@@ -863,6 +815,18 @@ function AdminPage({ onNavigate }) {
                                     value={editFormData.nameEnglish}
                                     onChange={handleEditInputChange}
                                     required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label htmlFor="edit-nameHindi">Hindi Name (Optional)</label>
+                                <input
+                                    type="text"
+                                    id="edit-nameHindi"
+                                    name="nameHindi"
+                                    value={editFormData.nameHindi}
+                                    onChange={handleEditInputChange}
+                                    placeholder="डोसा"
                                 />
                             </div>
 

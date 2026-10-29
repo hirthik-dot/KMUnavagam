@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import PageHeader from '../components/PageHeader';
 import Footer from '../components/Footer';
 import './HomePage.css';
+import { formatMoney } from '../utils/money';
 
 /**
  * HOME PAGE
@@ -90,28 +91,28 @@ function HomePage({ onNavigate }) {
                     <div className="stat-card stat-total">
                         <div className="stat-label">Total Sales</div>
                         <div className="stat-value">
-                            {loading ? '...' : `₹${stats.totalSales}`}
+                            {loading ? '...' : `₹${formatMoney(stats.totalSales)}`}
                         </div>
                     </div>
 
                     <div className="stat-card stat-cash">
                         <div className="stat-label">Cash Sales</div>
                         <div className="stat-value">
-                            {loading ? '...' : `₹${stats.cashSales}`}
+                            {loading ? '...' : `₹${formatMoney(stats.cashSales)}`}
                         </div>
                     </div>
 
                     <div className="stat-card stat-credit">
                         <div className="stat-label">Credit Sales</div>
                         <div className="stat-value">
-                            {loading ? '...' : `₹${stats.creditSales}`}
+                            {loading ? '...' : `₹${formatMoney(stats.creditSales)}`}
                         </div>
                     </div>
 
                     <div className="stat-card stat-expenses">
                         <div className="stat-label">Total Expenses</div>
                         <div className="stat-value">
-                            {loading ? '...' : `₹${stats.totalExpenses}`}
+                            {loading ? '...' : `₹${formatMoney(stats.totalExpenses)}`}
                         </div>
                     </div>
                 </div>

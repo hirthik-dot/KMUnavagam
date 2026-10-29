@@ -59,6 +59,26 @@ function validateAndRound(val, fieldName) {
 }
 
 /**
+ * Bill total computed from its item lines (rate rounded to the paisa x whole quantity).
+ * The stored bill total is always this value, so it can never disagree with the items.
+ */
+function billTotalFromItems(items, clientTotal) {
+  let paise = 0;
+  for (const item of items) {
+    const qty = Number(item.quantity);
+    if (!Number.isInteger(qty) || qty <= 0) {
+      throw new Error(`Invalid quantity for item ${item.id}: ${item.quantity}`);
+    }
+    paise += Math.round(validateAndRound(item.price, 'item.price') * 100) * qty;
+  }
+  const total = paise / 100;
+  if (Math.abs(total - clientTotal) > 0.001) {
+    logger.log(`[DB] Bill total corrected from ${clientTotal} to ${total} (sum of items)`, 'WARN');
+  }
+  return total;
+}
+
+/**
  * Helper: Get table structure info
  * Uses PRAGMA table_info() to safely check existing columns
  */
@@ -185,6 +205,7 @@ async function initializeDatabase() {
         addColumnIfNotExists("items", "category TEXT DEFAULT 'Other'");
         addColumnIfNotExists("items", "image_path TEXT");
         addColumnIfNotExists("items", "is_active INTEGER DEFAULT 1");
+        addColumnIfNotExists("items", "name_hindi TEXT");
 
         // Table 2: bills - stores bill information
         ensureDb().exec(`
@@ -345,6 +366,40 @@ async function initializeDatabase() {
       addColumnIfNotExists("employees", "is_active INTEGER DEFAULT 1");
       addColumnIfNotExists("employees", "daily_wage REAL DEFAULT 0");
 
+      // Auto daily wages: per-employee switch + no auto wages before this date (YYYY-MM-DD)
+      addColumnIfNotExists("employees", "auto_wage INTEGER DEFAULT 0");
+      addColumnIfNotExists("employees", "wage_start_date TEXT");
+
+      // Staff type: 'SERVING' (picked on bills) or 'NORMAL' (wages only).
+      // supplier_id links a serving employee to their suppliers row, which bills.supplier_id points to.
+      addColumnIfNotExists("employees", "staff_type TEXT DEFAULT 'NORMAL'");
+      addColumnIfNotExists("employees", "supplier_id INTEGER");
+      addColumnIfNotExists("employee_transactions", "is_auto INTEGER DEFAULT 0");
+
+      // At most one auto wage per employee per day (makes auto crediting safe to re-run)
+      ensureDb().exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_auto_wage
+        ON employee_transactions (employee_id, transaction_date) WHERE is_auto = 1
+      `);
+
+      // Shop holidays (whole shop closed): applied to everyone on auto wage, including staff added later
+      ensureDb().exec(`
+      CREATE TABLE IF NOT EXISTS shop_holidays (
+        holiday_date TEXT PRIMARY KEY
+      )
+    `);
+
+      // Days an employee must NOT get an auto wage: 'ABSENT', 'HOLIDAY' (shop closed) or 'REMOVED' (auto entry deleted)
+      ensureDb().exec(`
+      CREATE TABLE IF NOT EXISTS employee_wage_skips (
+        employee_id INTEGER NOT NULL,
+        skip_date TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        PRIMARY KEY (employee_id, skip_date),
+        FOREIGN KEY (employee_id) REFERENCES employees(id)
+      )
+    `);
+
       // Table 14: staff_transactions (Legacy/Suppliers-related)
       ensureDb().exec(`
       CREATE TABLE IF NOT EXISTS staff_transactions (
@@ -359,6 +414,17 @@ async function initializeDatabase() {
         FOREIGN KEY (expense_id) REFERENCES expenses(id)
       )
     `);
+
+        // Table 15: app_settings - simple key/value store (e.g. default bill print language)
+        ensureDb().exec(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    `);
+
+        // One-time: service staff (suppliers) become SERVING employees in Staff Maintenance
+        migrateServiceStaffToEmployees();
 
         // PERFORMANCE: Index on DATE(created_at) prevents full-table scans
         // on all date-range queries (getDailyRecords, getBillsByDate, getTodayStats).
@@ -575,6 +641,7 @@ function addItem(
   price,
   imagePath = null,
   category = "Other",
+  nameHindi = null,
 ) {
   const database = ensureDb();
 
@@ -592,20 +659,20 @@ function addItem(
       database
         .prepare(`
           UPDATE items
-          SET name_tamil = ?, price = ?, image_path = ?, category = ?, is_active = 1
+          SET name_tamil = ?, name_hindi = ?, price = ?, image_path = ?, category = ?, is_active = 1
           WHERE id = ?
         `)
-        .run(nameTamil, price, imagePath, category, existing.id);
+        .run(nameTamil, nameHindi, price, imagePath, category, existing.id);
       return existing.id;
     }
   }
 
   // No existing item — insert fresh
   const stmt = database.prepare(`
-    INSERT INTO items (name_tamil, name_english, price, image_path, category, is_active)
-    VALUES (?, ?, ?, ?, ?, 1)
+    INSERT INTO items (name_tamil, name_english, name_hindi, price, image_path, category, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
   `);
-  const result = stmt.run(nameTamil, nameEnglish, price, imagePath, category);
+  const result = stmt.run(nameTamil, nameEnglish, nameHindi, price, imagePath, category);
   return result.lastInsertRowid;
 }
 
@@ -620,13 +687,37 @@ function updateItem(
   price,
   imagePath = null,
   category = "Other",
+  nameHindi = null,
 ) {
   const stmt = ensureDb().prepare(`
-    UPDATE items 
-    SET name_tamil = ?, name_english = ?, price = ?, image_path = ?, category = ?
+    UPDATE items
+    SET name_tamil = ?, name_english = ?, name_hindi = ?, price = ?, image_path = ?, category = ?
     WHERE id = ?
   `);
-  stmt.run(nameTamil, nameEnglish, price, imagePath, category, id);
+  stmt.run(nameTamil, nameEnglish, nameHindi, price, imagePath, category, id);
+}
+
+/**
+ * Read a value from app_settings
+ * Used by: Admin Page / Print Preview (e.g. default bill print language)
+ */
+function getSetting(key, defaultValue = null) {
+  const row = ensureDb()
+    .prepare("SELECT value FROM app_settings WHERE key = ?")
+    .get(key);
+  return row ? row.value : defaultValue;
+}
+
+/**
+ * Save a value to app_settings (insert or overwrite)
+ */
+function setSetting(key, value) {
+  ensureDb()
+    .prepare(`
+      INSERT INTO app_settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `)
+    .run(key, value);
 }
 
 /**
@@ -697,6 +788,7 @@ function saveBill(items, totalAmount, customerId = null, supplierId = null, cust
 
   // Validate monetary input — reject NaN, Infinity, negatives
   totalAmount = validateAndRound(totalAmount, 'totalAmount');
+  totalAmount = billTotalFromItems(items, totalAmount);
 
   // Ensure IDs are integers if provided
   const targetCustomerId = customerId ? parseInt(customerId, 10) : null;
@@ -814,6 +906,7 @@ function getBillItems(billId) {
       i.id,
       i.name_tamil,
       i.name_english,
+      i.name_hindi,
       i.image_path
     FROM bill_items bi
     JOIN items i ON bi.item_id = i.id
@@ -830,6 +923,7 @@ function updateBill(billId, items, totalAmount, supplierId = null, customDate = 
 
   // Validate monetary input — reject NaN, Infinity, negatives
   totalAmount = validateAndRound(totalAmount, 'totalAmount');
+  totalAmount = billTotalFromItems(items, totalAmount);
 
   const database = ensureDb();
   const transaction = database.transaction((billItems) => {
@@ -979,19 +1073,21 @@ function updateExpense(expenseId, description, amount, expenseDate = null) {
   return ensureDb().transaction(() => {
     const database = ensureDb();
     
-    // 1. Update the linked vendor transaction if it exists
-    if (expenseDate) {
+    // 1. Update the linked vendor payment if it exists.
+    // Its note is the part inside "Vendor Payment: Name (note)", not the whole expense text
+    // (copying the whole text nested it again on every edit)
+    const vendorLink = database.prepare(`
+      SELECT vt.id, vt.description, v.name FROM vendor_transactions vt
+      JOIN vendors v ON v.id = vt.vendor_id
+      WHERE vt.expense_id = ?
+    `).get(expenseId);
+    if (vendorLink) {
+      const note = linkedNoteFromExpense(description, `Vendor Payment: ${vendorLink.name}`, vendorLink.description);
       database.prepare(`
         UPDATE vendor_transactions 
-        SET amount = ?, description = ?, transaction_date = ?
-        WHERE expense_id = ?
-      `).run(amount, description, expenseDate, expenseId);
-    } else {
-      database.prepare(`
-        UPDATE vendor_transactions 
-        SET amount = ?, description = ?
-        WHERE expense_id = ?
-      `).run(amount, description, expenseId);
+        SET amount = ?, description = ?, transaction_date = COALESCE(?, transaction_date)
+        WHERE id = ?
+      `).run(amount, note, expenseDate, vendorLink.id);
     }
 
     // 2. Update the linked staff transaction if it exists
@@ -1003,10 +1099,26 @@ function updateExpense(expenseId, description, amount, expenseDate = null) {
       `).run(amount, description, expenseDate, expenseId);
     } else {
       database.prepare(`
-        UPDATE staff_transactions 
+        UPDATE staff_transactions
         SET amount = ?, description = ?
         WHERE expense_id = ?
       `).run(amount, description, expenseId);
+    }
+
+    // 2b. Update the linked employee payment (Staff page "Give Cash") so the employee balance matches.
+    // Its note is the part inside "Staff Payment: Name (note)"
+    const employeeLink = database.prepare(`
+      SELECT et.id, et.description, e.name FROM employee_transactions et
+      JOIN employees e ON e.id = et.employee_id
+      WHERE et.expense_id = ?
+    `).get(expenseId);
+    if (employeeLink) {
+      const note = linkedNoteFromExpense(description, `Staff Payment: ${employeeLink.name}`, employeeLink.description);
+      database.prepare(`
+        UPDATE employee_transactions
+        SET amount = ?, description = ?, transaction_date = COALESCE(?, transaction_date)
+        WHERE id = ?
+      `).run(amount, note, expenseDate, employeeLink.id);
     }
 
     // 3. Update the expense itself
@@ -1025,6 +1137,20 @@ function updateExpense(expenseId, description, amount, expenseDate = null) {
     }
     return 1;
   })();
+}
+
+/**
+ * Note for a vendor/staff payment from its linked expense text.
+ * "Vendor Payment: Ravi (rice)" -> "rice", "Vendor Payment: Ravi" -> "".
+ * If the text was changed to something else entirely, the existing note is kept.
+ */
+function linkedNoteFromExpense(expenseDescription, prefix, currentNote) {
+  const text = (expenseDescription || '').trim();
+  if (text === prefix) return '';
+  if (text.startsWith(prefix + ' (') && text.endsWith(')')) {
+    return text.slice(prefix.length + 2, -1);
+  }
+  return currentNote;
 }
 
 /**
@@ -1049,6 +1175,10 @@ function deleteExpense(expenseId) {
       
       const sRes = database.prepare('DELETE FROM staff_transactions WHERE expense_id = ?').run(eId);
       if (sRes.changes > 0) logger.log(`   - Deleted ${sRes.changes} linked staff transactions`, "INFO");
+
+      // Employee payment ("Give Cash" on the Staff page) is the same money: remove it too
+      const eRes = database.prepare('DELETE FROM employee_transactions WHERE expense_id = ?').run(eId);
+      if (eRes.changes > 0) logger.log(`   - Deleted ${eRes.changes} linked employee payments`, "INFO");
       
       // 2. Now delete the expense itself
       const result = database.prepare('DELETE FROM expenses WHERE id = ?').run(eId);
@@ -1328,14 +1458,55 @@ function addCreditPayment(customerId, amount, date = null) {
 }
 
 /**
+ * Correct a credit payment (amount and/or date)
+ */
+function updateCreditPayment(paymentId, amount, date) {
+  amount = validateAndRound(amount, 'amount');
+  if (amount <= 0) throw new Error('Payment amount must be greater than 0');
+  const result = ensureDb()
+    .prepare('UPDATE credit_payments SET amount = ?, date = ? WHERE id = ?')
+    .run(amount, date, paymentId);
+  if (result.changes === 0) throw new Error('Payment not found');
+  return result.changes;
+}
+
+/**
+ * Delete a credit payment (customer's balance goes back up by that amount)
+ */
+function deleteCreditPayment(paymentId) {
+  const result = ensureDb()
+    .prepare('DELETE FROM credit_payments WHERE id = ?')
+    .run(paymentId);
+  if (result.changes === 0) throw new Error('Payment not found');
+  return result.changes;
+}
+
+/**
+ * Current balance (owed by the customer) = credit bills - payments
+ */
+function getCreditBalance(customerId) {
+  const database = ensureDb();
+  const billed = database.prepare(`
+    SELECT COALESCE(SUM(b.total_amount), 0) as total
+    FROM bills b JOIN credit_bills cb ON b.id = cb.bill_id
+    WHERE cb.customer_id = ?
+  `).get(customerId).total;
+  const settled = database.prepare(`
+    SELECT COALESCE(SUM(amount), 0) as total FROM credit_payments WHERE customer_id = ?
+  `).get(customerId).total;
+  return Math.round((billed - settled) * 100) / 100;
+}
+
+/**
  * Get all credit customers with totals and balances
  */
-function getAllCreditCustomers() {
+function getAllCreditCustomers(includeDeleted = false) {
   const stmt = ensureDb().prepare(`
     SELECT 
       cc.id,
       cc.name,
       cc.phone,
+      cc.is_deleted,
       COALESCE((
         SELECT SUM(b.total_amount)
         FROM bills b
@@ -1348,11 +1519,11 @@ function getAllCreditCustomers() {
         WHERE customer_id = cc.id
       ), 0) as total_paid
     FROM credit_customers cc
-    WHERE cc.is_deleted = 0
-    ORDER BY cc.name ASC
+    WHERE cc.is_deleted = 0 OR ? = 1
+    ORDER BY cc.is_deleted ASC, cc.name ASC
   `);
 
-  const customers = stmt.all();
+  const customers = stmt.all(includeDeleted ? 1 : 0);
   return customers.map((c) => ({
     ...c,
     balance: c.total_credit - c.total_paid,
@@ -1371,6 +1542,12 @@ function deleteCreditCustomer(customerId) {
     const deleteTx = ensureDb().transaction((id) => {
       // SAFETY: We NO LONGER delete child records (payments and bill links).
       // Keeping them preserves financial history and audit trails.
+
+      // A customer who has not fully paid can't be deleted: the money owed would vanish from the Credits list
+      const balance = getCreditBalance(id);
+      if (balance > 0) {
+        throw new Error(`Customer still owes ₹${balance}. Record their payments before deleting.`);
+      }
       
       // Update the customer record to mark as deleted (soft delete)
       const custInfo = ensureDb()
@@ -1391,6 +1568,17 @@ function deleteCreditCustomer(customerId) {
 }
 
 /**
+ * Undo a customer delete: they show in the Credits list again with their full history
+ */
+function restoreCreditCustomer(customerId) {
+  const result = ensureDb()
+    .prepare("UPDATE credit_customers SET is_deleted = 0 WHERE id = ?")
+    .run(customerId);
+  if (result.changes === 0) throw new Error("Customer record not found");
+  return result.changes;
+}
+
+/**
  * Get detailed info for a specific credit customer
  */
 function getCreditCustomerDetails(customerId) {
@@ -1402,6 +1590,7 @@ function getCreditCustomerDetails(customerId) {
       cc.id,
       cc.name,
       cc.phone,
+      cc.is_deleted,
       COALESCE((
         SELECT SUM(b.total_amount)
         FROM bills b
@@ -1432,6 +1621,7 @@ function getCreditCustomerDetails(customerId) {
       b.id,
       b.created_at,
       b.total_amount,
+      b.supplier_id,
       b.created_at as raw_date
     FROM bills b
     JOIN credit_bills cb ON b.id = cb.bill_id
@@ -1478,6 +1668,76 @@ function getBillsByDateRange(customerId, startDate, endDate) {
     ORDER BY DATE(b.created_at) ASC
   `);
   return stmt.all(customerId, startDate, endDate);
+}
+
+/**
+ * Full credit statement for a customer over a date range (YYYY-MM-DD, inclusive)
+ * Used by: PDF / Excel export on the Summary Preview page
+ * Opening balance = all credit bills minus all payments BEFORE startDate.
+ */
+function getCreditStatement(customerId, startDate, endDate) {
+  const database = ensureDb();
+
+  const customer = database
+    .prepare("SELECT id, name, phone FROM credit_customers WHERE id = ?")
+    .get(customerId);
+  if (!customer) throw new Error("Customer not found");
+
+  const billedBefore = database.prepare(`
+    SELECT COALESCE(SUM(b.total_amount), 0) as total
+    FROM bills b
+    JOIN credit_bills cb ON b.id = cb.bill_id
+    WHERE cb.customer_id = ? AND DATE(b.created_at) < ?
+  `).get(customerId, startDate).total;
+
+  const paidBefore = database.prepare(`
+    SELECT COALESCE(SUM(amount), 0) as total
+    FROM credit_payments
+    WHERE customer_id = ? AND date < ?
+  `).get(customerId, startDate).total;
+
+  const bills = database.prepare(`
+    SELECT b.id, b.created_at, DATE(b.created_at) as bill_date, b.total_amount
+    FROM bills b
+    JOIN credit_bills cb ON b.id = cb.bill_id
+    WHERE cb.customer_id = ?
+      AND DATE(b.created_at) >= ? AND DATE(b.created_at) <= ?
+    ORDER BY b.created_at ASC, b.id ASC
+  `).all(customerId, startDate, endDate);
+
+  const itemsStmt = database.prepare(`
+    SELECT i.name_english, i.name_tamil, bi.quantity, bi.rate
+    FROM bill_items bi
+    JOIN items i ON bi.item_id = i.id
+    WHERE bi.bill_id = ?
+  `);
+  for (const bill of bills) {
+    bill.items = itemsStmt.all(bill.id);
+  }
+
+  const payments = database.prepare(`
+    SELECT id, date, amount
+    FROM credit_payments
+    WHERE customer_id = ? AND date >= ? AND date <= ?
+    ORDER BY date ASC, id ASC
+  `).all(customerId, startDate, endDate);
+
+  const totalBilled = bills.reduce((sum, b) => sum + b.total_amount, 0);
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const openingBalance = billedBefore - paidBefore;
+
+  return {
+    customer,
+    startDate,
+    endDate,
+    openingBalance,
+    bills,
+    payments,
+    dailyTotals: getBillsByDateRange(customerId, startDate, endDate),
+    totalBilled,
+    totalPaid,
+    closingBalance: openingBalance + totalBilled - totalPaid,
+  };
 }
 
 // ========================================
@@ -1566,10 +1826,29 @@ function deleteCategory(id) {
  * Get all active suppliers
  */
 function getAllSuppliers() {
-  const stmt = ensureDb().prepare(
-    "SELECT * FROM suppliers WHERE is_active = 1 AND is_deleted = 0 ORDER BY name ASC",
-  );
+  // Billing "Select Staff": only active SERVING employees from Staff Maintenance
+  const stmt = ensureDb().prepare(`
+    SELECT s.* FROM suppliers s
+    JOIN employees e ON e.supplier_id = s.id
+    WHERE e.staff_type = 'SERVING' AND e.is_active = 1 AND e.is_deleted = 0
+      AND s.is_active = 1 AND s.is_deleted = 0
+    ORDER BY s.name ASC
+  `);
   return stmt.all();
+}
+
+/**
+ * Staff for the Records "staff-wise sales" filter: everyone who has bills or is serving staff,
+ * including discharged and deleted ones, so past waiters can still be selected
+ */
+function getSuppliersForReports() {
+  return ensureDb().prepare(`
+    SELECT s.id, s.name, s.is_active, s.is_deleted
+    FROM suppliers s
+    WHERE s.id IN (SELECT supplier_id FROM bills WHERE supplier_id IS NOT NULL)
+       OR s.id IN (SELECT supplier_id FROM employees WHERE staff_type = 'SERVING')
+    ORDER BY s.is_deleted ASC, s.is_active DESC, s.name ASC
+  `).all();
 }
 
 /**
@@ -1637,12 +1916,14 @@ function deleteSupplier(id) {
 function getSupplierWiseSales(startDate, endDate, supplierId = null) {
   let query = `
     SELECT
-    s.name as supplier_name,
+      s.id as supplier_id,
+      s.name as supplier_name,
       s.is_deleted,
       COUNT(b.id) as bill_count,
       SUM(b.total_amount) as total_sales
     FROM bills b
-    JOIN suppliers s ON b.supplier_id = s.id
+    -- LEFT JOIN: bills with no staff are kept as one "Unassigned" row, so the rows add up to total sales
+    LEFT JOIN suppliers s ON b.supplier_id = s.id
     WHERE DATE(b.created_at) >= ? AND DATE(b.created_at) <= ?
       `;
 
@@ -1695,9 +1976,16 @@ function getEmployeeDetails(employeeId) {
   if (!employee) throw new Error("Employee not found");
 
   const transactions = db.prepare(`
-    SELECT * FROM employee_transactions 
-    WHERE employee_id = ? 
+    SELECT * FROM employee_transactions
+    WHERE employee_id = ?
     ORDER BY transaction_date DESC, id DESC
+  `).all(employeeId);
+
+  // Absent / holiday days (no auto wage) so the history can show them
+  const skips = db.prepare(`
+    SELECT skip_date, reason FROM employee_wage_skips
+    WHERE employee_id = ? AND reason IN ('ABSENT', 'HOLIDAY')
+    ORDER BY skip_date DESC
   `).all(employeeId);
 
   const balanceResult = db.prepare(`
@@ -1709,61 +1997,369 @@ function getEmployeeDetails(employeeId) {
   return {
     ...employee,
     balance: balanceResult.balance,
-    transactions
+    transactions,
+    skips
   };
 }
 
 /**
  * Add a new employee or re-activate if deleted
+ * autoWage: credit dailyWage automatically every day from wageStartDate (YYYY-MM-DD)
  */
-function addEmployee(name, dailyWage = 0) {
+function addEmployee(name, dailyWage = 0, autoWage = false, wageStartDate = null, staffType = 'NORMAL') {
   const database = ensureDb();
-  
+  dailyWage = validateAndRound(dailyWage || 0, 'dailyWage');
+  staffType = staffType === 'SERVING' ? 'SERVING' : 'NORMAL';
+  return database.transaction(() => {
+
   // Check if employee already exists (including deleted ones)
   const existing = database.prepare("SELECT id, is_deleted FROM employees WHERE name = ?").get(name);
-  
+
   if (existing) {
     if (existing.is_deleted === 0) {
       throw new Error("An employee with this name already exists");
     } else {
       // Re-activate deleted employee
-      database.prepare("UPDATE employees SET is_deleted = 0, is_active = 1, daily_wage = ? WHERE id = ?").run(dailyWage, existing.id);
+      database.prepare(`
+        UPDATE employees SET is_deleted = 0, is_active = 1, daily_wage = ?, auto_wage = ?, wage_start_date = ?, staff_type = ?
+        WHERE id = ?
+      `).run(dailyWage, autoWage ? 1 : 0, wageStartDate, staffType, existing.id);
+      syncServingSupplier(existing.id);
+      applyShopHolidays(existing.id);
+      creditDailyWages(getLocalDateString());
       return existing.id;
     }
   }
 
   const stmt = database.prepare(`
-    INSERT INTO employees (name, daily_wage, is_active, is_deleted)
-    VALUES (?, ?, 1, 0)
+    INSERT INTO employees (name, daily_wage, is_active, is_deleted, auto_wage, wage_start_date, staff_type)
+    VALUES (?, ?, 1, 0, ?, ?, ?)
   `);
-  const result = stmt.run(name, dailyWage);
+  const result = stmt.run(name, dailyWage, autoWage ? 1 : 0, wageStartDate, staffType);
+  // Serving staff get their billing record now
+  syncServingSupplier(result.lastInsertRowid);
+  // A shop holiday marked earlier today (or for a future date) applies to them too
+  applyShopHolidays(result.lastInsertRowid);
+  // Credit today straight away if they start today
+  creditDailyWages(getLocalDateString());
   return result.lastInsertRowid;
+  })();
 }
 
 /**
  * Update employee info
+ * A new daily wage applies from today: today's untouched auto wage is moved to the new rate.
  */
-function updateEmployee(id, name, dailyWage, isActive) {
-  const stmt = ensureDb().prepare(`
-    UPDATE employees 
-    SET name = ?, daily_wage = ?, is_active = ?
-    WHERE id = ?
-  `);
-  const result = stmt.run(name, dailyWage, isActive ? 1 : 0, id);
+function updateEmployee(id, name, dailyWage, isActive, autoWage = false, wageStartDate = null, staffType = 'NORMAL') {
+  dailyWage = validateAndRound(dailyWage || 0, 'dailyWage');
+  staffType = staffType === 'SERVING' ? 'SERVING' : 'NORMAL';
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    const before = database.prepare('SELECT daily_wage, is_active, auto_wage FROM employees WHERE id = ?').get(id);
+
+    const result = database.prepare(`
+      UPDATE employees
+      SET name = ?, daily_wage = ?, is_active = ?, auto_wage = ?, wage_start_date = ?, staff_type = ?
+      WHERE id = ?
+    `).run(name, dailyWage, isActive ? 1 : 0, autoWage ? 1 : 0, wageStartDate, staffType, id);
+
+    // Name / active / type changes reach the billing staff list
+    syncServingSupplier(id);
+
+    // Just re-activated or switched to auto wage: shop holidays from today onwards apply to them too.
+    // (Not re-applied on ordinary edits, so a holiday undone for one person stays undone.)
+    const nowEligible = isActive && autoWage;
+    if (before && nowEligible && !(before.is_active && before.auto_wage)) {
+      applyShopHolidays(id);
+    }
+
+    const today = getLocalDateString();
+    if (before && before.daily_wage !== dailyWage && dailyWage > 0) {
+      // Only if the amount was not edited by hand (e.g. half day)
+      database.prepare(`
+        UPDATE employee_transactions SET amount = ?
+        WHERE employee_id = ? AND transaction_date = ? AND is_auto = 1 AND amount = ?
+      `).run(dailyWage, id, today, before.daily_wage);
+    }
+    creditDailyWages(today);
+    return result.changes;
+  })();
+}
+
+// ========================================
+// AUTO DAILY WAGES
+// ========================================
+
+const WAGE_PROCESSED_THROUGH_KEY = 'wageProcessedThrough';
+
+/**
+ * Local date as YYYY-MM-DD (offsetDays: -1 = yesterday)
+ */
+function getLocalDateString(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+/**
+ * Credit one day's auto wage to every eligible employee.
+ * Eligible: active, auto wage ON, daily wage > 0, started on/before the date, not absent/holiday that day.
+ * Safe to call repeatedly: the unique index allows only one auto wage per employee per day.
+ */
+function creditDailyWages(date) {
+  const result = ensureDb().prepare(`
+    INSERT OR IGNORE INTO employee_transactions
+      (employee_id, amount, transaction_date, type, description, is_auto)
+    SELECT e.id, e.daily_wage, ?, 'WAGE', 'Daily Wage (auto)', 1
+    FROM employees e
+    WHERE e.is_deleted = 0 AND e.is_active = 1 AND e.auto_wage = 1 AND e.daily_wage > 0
+      AND (e.wage_start_date IS NULL OR e.wage_start_date <= ?)
+      AND NOT EXISTS (
+        SELECT 1 FROM employee_wage_skips s WHERE s.employee_id = e.id AND s.skip_date = ?
+      )
+  `).run(date, date, date);
   return result.changes;
+}
+
+/**
+ * Called on app start and when the date changes while the app is open.
+ * Credits today's wages and returns the days in between that were never processed
+ * (app not opened) so the user can decide whether to add wages for them.
+ */
+function runDailyWages() {
+  const today = getLocalDateString();
+  const credited = creditDailyWages(today);
+
+  let processedThrough = getSetting(WAGE_PROCESSED_THROUGH_KEY);
+  if (!processedThrough) {
+    // First run after this feature ships: never back-fill history
+    processedThrough = getLocalDateString(-1);
+    setSetting(WAGE_PROCESSED_THROUGH_KEY, processedThrough);
+  }
+
+  const pendingDays = getPendingWageDays(processedThrough, today);
+  if (pendingDays.length === 0) {
+    setSetting(WAGE_PROCESSED_THROUGH_KEY, today);
+  }
+  return { credited, pendingDays };
+}
+
+/**
+ * Dates strictly between processedThrough and today (YYYY-MM-DD), with what auto wages would cost.
+ * Only returned if at least one employee has auto wages on.
+ */
+function getPendingWageDays(processedThrough, today) {
+  const database = ensureDb();
+  const autoCount = database.prepare(`
+    SELECT COUNT(*) as c FROM employees
+    WHERE is_deleted = 0 AND is_active = 1 AND auto_wage = 1 AND daily_wage > 0
+  `).get().c;
+  if (autoCount === 0) return [];
+
+  const days = [];
+  const cursor = new Date(processedThrough + 'T00:00:00');
+  cursor.setDate(cursor.getDate() + 1);
+  // Cap at 90 days so a very long gap can't build a huge list
+  while (days.length < 90) {
+    const date = cursor.getFullYear() + '-' +
+      String(cursor.getMonth() + 1).padStart(2, '0') + '-' +
+      String(cursor.getDate()).padStart(2, '0');
+    if (date >= today) break;
+    days.push(date);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const preview = database.prepare(`
+    SELECT COUNT(*) as employees, COALESCE(SUM(e.daily_wage), 0) as total
+    FROM employees e
+    WHERE e.is_deleted = 0 AND e.is_active = 1 AND e.auto_wage = 1 AND e.daily_wage > 0
+      AND (e.wage_start_date IS NULL OR e.wage_start_date <= ?)
+      AND NOT EXISTS (SELECT 1 FROM employee_wage_skips s WHERE s.employee_id = e.id AND s.skip_date = ?)
+      AND NOT EXISTS (
+        SELECT 1 FROM employee_transactions t
+        WHERE t.employee_id = e.id AND t.transaction_date = ? AND t.is_auto = 1
+      )
+  `);
+  return days
+    .map((date) => ({ date, ...preview.get(date, date, date) }))
+    .filter((d) => d.employees > 0);
+}
+
+/**
+ * User's answer to the "app wasn't opened on these days" prompt.
+ * Credits wages for the chosen dates; all other missed days get no wage.
+ */
+function resolvePendingWageDays(datesToCredit = []) {
+  return ensureDb().transaction(() => {
+    let credited = 0;
+    for (const date of datesToCredit) {
+      credited += creditDailyWages(date);
+    }
+    setSetting(WAGE_PROCESSED_THROUGH_KEY, getLocalDateString());
+    return credited;
+  })();
+}
+
+/**
+ * Mark an employee absent for a day: removes that day's auto wage and stops it being re-added
+ */
+function markEmployeeAbsent(employeeId, date) {
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    database.prepare(`
+      DELETE FROM employee_transactions
+      WHERE employee_id = ? AND transaction_date = ? AND is_auto = 1
+    `).run(employeeId, date);
+    database.prepare(`
+      INSERT OR REPLACE INTO employee_wage_skips (employee_id, skip_date, reason)
+      VALUES (?, ?, 'ABSENT')
+    `).run(employeeId, date);
+  })();
+}
+
+/**
+ * Shop holiday: no auto wage for anyone with auto wages on that day
+ */
+function markShopHoliday(date) {
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    database.prepare('INSERT OR IGNORE INTO shop_holidays (holiday_date) VALUES (?)').run(date);
+    const employees = database.prepare(`
+      SELECT id FROM employees WHERE is_deleted = 0 AND auto_wage = 1
+    `).all();
+    for (const { id } of employees) {
+      database.prepare(`
+        DELETE FROM employee_transactions
+        WHERE employee_id = ? AND transaction_date = ? AND is_auto = 1
+      `).run(id, date);
+      database.prepare(`
+        INSERT OR REPLACE INTO employee_wage_skips (employee_id, skip_date, reason)
+        VALUES (?, ?, 'HOLIDAY')
+      `).run(id, date);
+    }
+    return employees.length;
+  })();
+}
+
+/**
+ * Give an employee the shop holidays from today onwards (no auto wage on those days).
+ * Used when someone is added, re-activated or switched to auto wage after a holiday was marked.
+ */
+function applyShopHolidays(employeeId) {
+  ensureDb().prepare(`
+    INSERT OR IGNORE INTO employee_wage_skips (employee_id, skip_date, reason)
+    SELECT ?, holiday_date, 'HOLIDAY' FROM shop_holidays WHERE holiday_date >= ?
+  `).run(employeeId, getLocalDateString());
+}
+
+/**
+ * Undo Absent / Holiday for one employee on a day: the auto wage is credited again (not for future days)
+ */
+function removeWageSkip(employeeId, date) {
+  return ensureDb().transaction(() => {
+    ensureDb().prepare(`
+      DELETE FROM employee_wage_skips WHERE employee_id = ? AND skip_date = ?
+    `).run(employeeId, date);
+    if (date <= getLocalDateString()) {
+      creditDailyWages(date);
+    }
+  })();
 }
 
 /**
  * Soft delete an employee
  */
 function deleteEmployee(id) {
-  const stmt = ensureDb().prepare(`
-    UPDATE employees 
-    SET is_deleted = 1, is_active = 0
-    WHERE id = ?
-  `);
-  const result = stmt.run(id);
-  return result.changes;
+  return ensureDb().transaction(() => {
+    const result = ensureDb().prepare(`
+      UPDATE employees
+      SET is_deleted = 1, is_active = 0
+      WHERE id = ?
+    `).run(id);
+    syncServingSupplier(id);
+    return result.changes;
+  })();
+}
+
+// ========================================
+// SERVING STAFF <-> BILLING (suppliers) LINK
+// ========================================
+
+/**
+ * Free up a suppliers name held by an old, unlinked record (e.g. a deleted waiter),
+ * so a serving employee can use it. The old record keeps its bills under "Name (old #id)".
+ */
+function releaseSupplierName(name, keepSupplierId = null) {
+  const database = ensureDb();
+  const holder = database.prepare('SELECT id FROM suppliers WHERE name = ? AND id IS NOT ?').get(name, keepSupplierId);
+  if (!holder) return;
+  const linked = database.prepare('SELECT 1 FROM employees WHERE supplier_id = ?').get(holder.id);
+  if (linked) throw new Error(`A serving staff named "${name}" already exists`);
+  database.prepare('UPDATE suppliers SET name = ? WHERE id = ?').run(`${name} (old #${holder.id})`, holder.id);
+}
+
+/**
+ * Keep an employee's billing record (suppliers row) in step with Staff Maintenance:
+ *  - SERVING: exists, same name, active only while the employee is active, deleted with the employee
+ *  - NORMAL:  hidden from billing (record kept so past bills still show the name)
+ * Bills keep pointing at the same suppliers.id, so history and staff-wise sales stay intact.
+ */
+function syncServingSupplier(employeeId) {
+  const database = ensureDb();
+  const employee = database.prepare('SELECT * FROM employees WHERE id = ?').get(employeeId);
+  if (!employee) return;
+  const isServing = employee.staff_type === 'SERVING';
+
+  let supplierId = employee.supplier_id;
+  if (!supplierId) {
+    if (!isServing) return;
+    releaseSupplierName(employee.name);
+    supplierId = database.prepare('INSERT INTO suppliers (name, is_active, is_deleted) VALUES (?, 1, 0)')
+      .run(employee.name).lastInsertRowid;
+    database.prepare('UPDATE employees SET supplier_id = ? WHERE id = ?').run(supplierId, employeeId);
+  }
+
+  releaseSupplierName(employee.name, supplierId);
+  database.prepare('UPDATE suppliers SET name = ?, is_active = ?, is_deleted = ? WHERE id = ?').run(
+    employee.name,
+    isServing && employee.is_active && !employee.is_deleted ? 1 : 0,
+    employee.is_deleted ? 1 : 0,
+    supplierId,
+  );
+}
+
+/**
+ * One-time migration: every current service staff (Admin "Manage Service Staff") becomes a
+ * SERVING employee linked to their existing suppliers row. Existing employees stay NORMAL.
+ * Old staff_transactions rows are left untouched (not shown anywhere).
+ */
+function migrateServiceStaffToEmployees() {
+  if (getSetting('staffMergeDone') === '1') return;
+  const database = ensureDb();
+  database.transaction(() => {
+    const suppliers = database.prepare('SELECT * FROM suppliers WHERE is_deleted = 0').all();
+    for (const s of suppliers) {
+      const alreadyLinked = database.prepare('SELECT id FROM employees WHERE supplier_id = ?').get(s.id);
+      if (alreadyLinked) continue;
+
+      const sameName = database.prepare('SELECT id, is_deleted FROM employees WHERE LOWER(name) = LOWER(?)').get(s.name);
+      if (sameName && sameName.is_deleted === 0) {
+        // Same person in both lists: one employee who also serves
+        database.prepare("UPDATE employees SET staff_type = 'SERVING', supplier_id = ? WHERE id = ?").run(s.id, sameName.id);
+      } else {
+        // Name taken by a deleted employee: keep both, mark the waiter's record
+        const name = sameName ? `${s.name} (Serving)` : s.name;
+        database.prepare(`
+          INSERT INTO employees (name, daily_wage, is_active, is_deleted, auto_wage, staff_type, supplier_id)
+          VALUES (?, 0, ?, 0, 0, 'SERVING', ?)
+        `).run(name, s.is_active ? 1 : 0, s.id);
+      }
+    }
+    setSetting('staffMergeDone', '1');
+  })();
+  logger.log('✅ Service staff merged into Staff Maintenance as SERVING employees', 'INFO');
 }
 
 /**
@@ -1838,12 +2434,20 @@ function updateEmployeeTransaction(id, amount, description, date) {
 function deleteEmployeeTransaction(transactionId) {
   return ensureDb().transaction(() => {
     const database = ensureDb();
-    const transaction = database.prepare('SELECT id, expense_id FROM employee_transactions WHERE id = ?').get(transactionId);
+    const transaction = database.prepare('SELECT id, expense_id, employee_id, transaction_date, is_auto FROM employee_transactions WHERE id = ?').get(transactionId);
     if (!transaction) return 0;
 
     if (transaction.expense_id) {
       database.prepare('UPDATE employee_transactions SET expense_id = NULL WHERE id = ?').run(transactionId);
       database.prepare('DELETE FROM expenses WHERE id = ?').run(transaction.expense_id);
+    }
+
+    // A deleted auto wage must stay deleted (otherwise it is re-credited on the next app start)
+    if (transaction.is_auto) {
+      database.prepare(`
+        INSERT OR IGNORE INTO employee_wage_skips (employee_id, skip_date, reason)
+        VALUES (?, ?, 'REMOVED')
+      `).run(transaction.employee_id, transaction.transaction_date);
     }
 
     const result = database.prepare('DELETE FROM employee_transactions WHERE id = ?').run(transactionId);
@@ -2232,6 +2836,9 @@ module.exports = {
   updateItem,
   toggleItemStatus,
   deleteItem,
+  // Settings functions
+  getSetting,
+  setSetting,
   saveBill,
   updateBill,
   deleteBill,
@@ -2255,9 +2862,15 @@ module.exports = {
   getAllCreditCustomers,
   getCreditCustomerDetails,
   getBillsByDateRange,
+  getCreditStatement,
+  updateCreditPayment,
+  deleteCreditPayment,
+  getCreditBalance,
+  restoreCreditCustomer,
   // Supplier functions
   getAllSuppliers,
   getAllSuppliersAdmin,
+  getSuppliersForReports,
   addSupplier,
   updateSupplier,
   deleteSupplier,
@@ -2290,6 +2903,12 @@ module.exports = {
   addEmployeeTransaction,
   updateEmployeeTransaction,
   deleteEmployeeTransaction,
+  // Auto daily wage functions
+  runDailyWages,
+  resolvePendingWageDays,
+  markEmployeeAbsent,
+  markShopHoliday,
+  removeWageSkip,
   // System functions
   backupDatabase,
   // Safety/Backup functions

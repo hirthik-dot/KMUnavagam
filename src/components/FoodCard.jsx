@@ -1,7 +1,10 @@
 import { useState, useRef } from 'react';
-import './FoodCard.css';
+import { getItemDisplayNames } from '../utils/itemLanguage';
+import './FoodCard.css';
+import { formatMoney, roundMoney } from '../utils/money';
 
-function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpdateQuantity }) {
+function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpdateQuantity, displayLanguage }) {
+    const { primary: primaryName, secondary: secondaryName } = getItemDisplayNames(item, displayLanguage);
     const [isClicked, setIsClicked] = useState(false);
     const [isEditingPrice, setIsEditingPrice] = useState(false);
     const [tempPrice, setTempPrice] = useState(item.price);
@@ -61,7 +64,8 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
      * Save the edited price
      */
     function savePriceChange() {
-        const finalPrice = tempPrice === '' || tempPrice === '0' ? item.price : parseFloat(tempPrice);
+        // Prices are kept to the paisa: 33.333 becomes 33.33, so bill total and item lines always agree
+        const finalPrice = tempPrice === '' || tempPrice === '0' ? item.price : roundMoney(parseFloat(tempPrice));
 
         if (!isNaN(finalPrice) && finalPrice > 0 && onPriceChange) {
             onPriceChange(item.id, finalPrice);
@@ -108,11 +112,11 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
 
             {/* Food Details */}
             <div className="food-details">
-                {/* Tamil Name (Big) */}
-                <h3 className="food-name-tamil">{item.name_tamil}</h3>
+                {/* Name in display language (Big) */}
+                <h3 className="food-name-tamil">{primaryName}</h3>
 
-                {/* English Name */}
-                <p className="food-name-english">{item.name_english}</p>
+                {/* Secondary name (English, or Tamil when the big name is English) */}
+                {secondaryName && <p className="food-name-english">{secondaryName}</p>}
 
                 {/* Price - Editable on double click */}
                 {isEditingPrice ? (
@@ -137,7 +141,7 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
                         onDoubleClick={handlePriceDoubleClick}
                         title="Double-click to edit price"
                     >
-                        ₹{item.price.toFixed(0)}
+                        ₹{formatMoney(item.price)}
                     </p>
                 )}
 

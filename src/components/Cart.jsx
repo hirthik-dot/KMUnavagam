@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import { getItemDisplayNames } from '../utils/itemLanguage';
 import './Cart.css';
 
-function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint, className = '' }) {
+function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint, className = '', displayLanguage }) {
     const [editingItemId, setEditingItemId] = useState(null);
     const [editValue, setEditValue] = useState('');
     const inputRef = useRef(null);
@@ -53,12 +54,14 @@ function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint, className 
                 <>
                     {/* Cart Items */}
                     <div className="cart-items">
-                        {cart.map((item) => (
+                        {cart.map((item) => {
+                            const names = getItemDisplayNames(item, displayLanguage);
+                            return (
                             <div key={item.id} className="cart-item">
                                 {/* Item Info */}
                                 <div className="cart-item-info">
-                                    <p className="cart-item-name-tamil">{item.name_tamil}</p>
-                                    <p className="cart-item-name-english">{item.name_english}</p>
+                                    <p className="cart-item-name-tamil">{names.primary}</p>
+                                    {names.secondary && <p className="cart-item-name-english">{names.secondary}</p>}
                                     <p className="cart-item-rate">₹{item.price.toFixed(2)} each</p>
                                 </div>
 
@@ -114,7 +117,8 @@ function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint, className 
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     {/* Grand Total */}

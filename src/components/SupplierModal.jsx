@@ -1,8 +1,11 @@
 import './SupplierModal.css';
 import { useState } from 'react';
 
-function SupplierModal({ suppliers, onSelect, onCancel }) {
-    const [selectedSupplierId, setSelectedSupplierId] = useState('');
+function SupplierModal({ suppliers, onSelect, onCancel, initialSupplierId = null }) {
+    // Pre-select the previously chosen staff, but only if they are still in the active list
+    const [selectedSupplierId, setSelectedSupplierId] = useState(
+        suppliers.some(s => s.id === initialSupplierId) ? String(initialSupplierId) : ''
+    );
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -31,7 +34,7 @@ function SupplierModal({ suppliers, onSelect, onCancel }) {
                         >
                             <option value="" disabled>-- Choose Supplier --</option>
                             {suppliers.map(s => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
+                                <option key={s.id} value={s.id}>{s.label || s.name}</option>
                             ))}
                         </select>
                     </div>

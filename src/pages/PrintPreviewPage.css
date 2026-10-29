@@ -241,3 +241,67 @@
     text-align: center;
     padding: 100px;
 }
+/* Bill print language toggle (per-bill override) */
+.language-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.language-toggle-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #64748b;
+    margin-right: 4px;
+}
+
+.language-btn {
+    padding: 8px 16px;
+    border: 2px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    color: #1e293b;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.language-btn.active {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: white;
+}
+
+.language-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Credit Summary Preview (SummaryPreviewPage) */
+.summary-preview-meta {
+    font-size: 16px;
+    color: #cbd5e1;
+}
+
+.summary-paper {
+    border-top: 5px solid #6366f1;
+    display: flex;
+    justify-content: center;
+}
+
+.summary-paper iframe {
+    width: 230px; /* same as the slip's body width in generateCreditSummaryHTML */
+    height: 65vh;
+    border: none;
+    background: white;
+}
+
+.download-pdf {
+    background-color: #dc2626;
+    color: white;
+}
+
+.download-excel {
+    background-color: #15803d;
+    color: white;
+}

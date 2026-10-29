@@ -5,6 +5,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Toast from '../components/Toast';
 import { formatToDisplayDate, getTodayLocaleDate } from '../utils/DateUtils';
 import './ExpensesPage.css';
+import { formatMoney, roundMoney } from '../utils/money';
 import './CreditDetailsPage.css'; // For detail styling consistency
 import './CreditsPage.css'; // For list styling consistency
 
@@ -356,7 +357,7 @@ function ExpensesPage({ onNavigate, initialTab }) {
                         <div className="expenses-list-section">
                             <div className="list-header">
                                 <h3 className="list-title"><i className="fas fa-list"></i> Today's History</h3>
-                                <div className="total-badge">Total: ₹{todayTotal}</div>
+                                <div className="total-badge">Total: ₹{formatMoney(todayTotal)}</div>
                             </div>
 
                             <div className="expenses-list">
@@ -369,7 +370,7 @@ function ExpensesPage({ onNavigate, initialTab }) {
                                                 <div className="expense-desc">
                                                     <i className="fas fa-dot-circle"></i> {exp.description}
                                                 </div>
-                                                <div className="expense-amount">₹{exp.amount}</div>
+                                                <div className="expense-amount">₹{formatMoney(exp.amount)}</div>
                                             </div>
                                             <div className="expense-actions">
                                                 <button className="edit-btn-expense" onClick={() => {
@@ -465,7 +466,7 @@ function ExpensesPage({ onNavigate, initialTab }) {
                                             <tr key={exp.id}>
                                                 <td>{formatToDisplayDate(exp.expense_date)}</td>
                                                 <td className="bold">{exp.description}</td>
-                                                <td className="text-right bold">₹{exp.amount}</td>
+                                                <td className="text-right bold">₹{formatMoney(exp.amount)}</td>
                                                 <td>
                                                     <div className="actions-cell">
                                                         <button className="icon-btn edit" onClick={() => {
@@ -527,7 +528,7 @@ function ExpensesPage({ onNavigate, initialTab }) {
                                                 <td className="name-cell">{v.name}</td>
                                                 <td>{v.phone || '-'}</td>
                                                 <td className={`amount-cell balance text-right ${v.balance > 0 ? 'pending' : ''}`}>
-                                                    ₹{v.balance?.toLocaleString()}
+                                                    ₹{formatMoney(v.balance, { grouping: true })}
                                                 </td>
                                             </tr>
                                         ))}
@@ -559,19 +560,19 @@ function ExpensesPage({ onNavigate, initialTab }) {
                             <div className="balance-card">
                                 <span className="balance-label">Current Balance</span>
                                 <h2 className={`balance-value ${selectedVendorDetail.balance > 0 ? 'pending' : ''}`}>
-                                    ₹{selectedVendorDetail.balance?.toLocaleString()}
+                                    ₹{formatMoney(selectedVendorDetail.balance, { grouping: true })}
                                 </h2>
                             </div>
                         </div>
 
                         <div className="details-actions">
-                            <button className="payment-btn" onClick={() => { setTransactionType('CREDIT'); setEditingTransactionId(null); setTransAmount(''); setTransDesc(''); setShowTransactionForm(true); }}>
+                            <button className="payment-btn" onClick={() => { setTransactionType('CREDIT'); setEditingTransactionId(null); setTransAmount(''); setTransDesc(''); setTransDate(getTodayLocaleDate()); setShowTransactionForm(true); }}>
                                 <i className="fas fa-plus"></i> Add New Bill
                             </button>
-                            <button className="new-bill-btn" onClick={() => { setTransactionType('PAYMENT'); setEditingTransactionId(null); setTransAmount(''); setTransDesc(''); setShowTransactionForm(true); }}>
+                            <button className="new-bill-btn" onClick={() => { setTransactionType('PAYMENT'); setEditingTransactionId(null); setTransAmount(''); setTransDesc(''); setTransDate(getTodayLocaleDate()); setShowTransactionForm(true); }}>
                                 <i className="fas fa-hand-holding-dollar"></i> Make Payment
                             </button>
-                            <button className="settle-btn" disabled={selectedVendorDetail.balance <= 0} onClick={() => { setTransactionType('PAYMENT'); setEditingTransactionId(null); setTransAmount(selectedVendorDetail.balance.toString()); setTransDesc('Full Settlement'); setShowTransactionForm(true); }}>
+                            <button className="settle-btn" disabled={selectedVendorDetail.balance <= 0} onClick={() => { setTransactionType('PAYMENT'); setEditingTransactionId(null); setTransAmount(roundMoney(selectedVendorDetail.balance).toString()); setTransDesc('Full Settlement'); setTransDate(getTodayLocaleDate()); setShowTransactionForm(true); }}>
                                 <i className="fas fa-check-double"></i> Settle All
                             </button>
                         </div>
@@ -598,7 +599,7 @@ function ExpensesPage({ onNavigate, initialTab }) {
                                                 </td>
                                                 <td>{t.description || '-'}</td>
                                                 <td className={`text-right ${t.type === 'CREDIT' ? 'amount-credit' : 'amount-payment'}`}>
-                                                    ₹{t.amount.toLocaleString()}
+                                                    ₹{formatMoney(t.amount, { grouping: true })}
                                                 </td>
                                                 <td>
                                                     <div className="actions-cell">

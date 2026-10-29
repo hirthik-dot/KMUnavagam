@@ -4,6 +4,8 @@ import Footer from '../components/Footer';
 import { formatToDisplayDate, getTodayLocaleDate } from '../utils/DateUtils';
 import Toast from '../components/Toast';
 import PaymentSuccessModal from '../components/PaymentSuccessModal';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { formatMoney, roundMoney } from '../utils/money';
 import './CreditDetailsPage.css';
 
 /**
@@ -11,7 +13,7 @@ import './CreditDetailsPage.css';
  * Shows transaction history for a specific customer
  * Allows recording payments
  */
-function CreditDetailsPage({ onNavigate, customerId }) {
+function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
     const [customer, setCustomer] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -22,6 +24,9 @@ function CreditDetailsPage({ onNavigate, customerId }) {
     const [toast, setToast] = useState(null);
     const [billToDelete, setBillToDelete] = useState(null);
     const [paymentDate, setPaymentDate] = useState(getTodayLocaleDate());
+    // Set when the payment form is correcting an existing payment instead of adding one
+    const [editingPaymentId, setEditingPaymentId] = useState(null);
+    const [confirmDialog, setConfirmDialog] = useState(null);
 
     // For Bill Preview Modal
     const [selectedBill, setSelectedBill] = useState(null);
@@ -29,13 +34,15 @@ function CreditDetailsPage({ onNavigate, customerId }) {
     const [isBillLoading, setIsBillLoading] = useState(false);
 
     // For Summary Bill Range
-    const [showSummaryModal, setShowSummaryModal] = useState(false);
+    // summaryRange is set when coming back from Summary Preview ("Change Dates"): reopen with the same range
+    const [showSummaryModal, setShowSummaryModal] = useState(!!summaryRange);
     const [summaryStartDate, setSummaryStartDate] = useState(() => {
+        if (summaryRange?.start) return summaryRange.start;
         const d = new Date();
         d.setDate(d.getDate() - 7);
         return d.toISOString().split('T')[0];
     });
-    const [summaryEndDate, setSummaryEndDate] = useState(getTodayLocaleDate());
+    const [summaryEndDate, setSummaryEndDate] = useState(summaryRange?.end || getTodayLocaleDate());
     const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
     useEffect(() => {
@@ -72,6 +79,18 @@ function CreditDetailsPage({ onNavigate, customerId }) {
         }
     };
 
+    // Undo a customer delete
+    const handleRestore = async () => {
+        try {
+            await window.electronAPI.restoreCreditCustomer(customer.id);
+            setToast({ message: `${customer.name} restored`, type: 'success' });
+            loadCustomerDetails();
+        } catch (error) {
+            console.error('Error restoring customer:', error);
+            setToast({ message: 'Failed to restore customer', type: 'error' });
+        }
+    };
+
     const handleDeleteBill = async () => {
         if (!billToDelete) return;
         try {
@@ -90,10 +109,91 @@ function CreditDetailsPage({ onNavigate, customerId }) {
         }
     };
 
+    // Edit a bill: same flow as Records "Edit & Reprint", but comes back to this customer afterwards
+    const handleEditBill = async (bill) => {
+        try {
+            const items = await window.electronAPI.getBillItems(bill.id);
+            const cartItems = items.map(item => ({
+                id: item.item_id || item.id,
+                item_id: item.item_id || item.id,
+                name_tamil: item.name_tamil,
+                name_hindi: item.name_hindi,
+                name_english: item.name_english,
+                price: item.rate,
+                quantity: item.quantity,
+                image_path: item.image_path || null
+            }));
+
+            onNavigate('billing', {
+                editMode: true,
+                originalBillId: bill.id,
+                cart: cartItems,
+                creditCustomer: { creditCustomerId: customer.id, customerName: customer.name },
+                customerName: customer.name,
+                supplierId: bill.supplier_id,
+                billDate: bill.date || getTodayLocaleDate(),
+                returnTo: { page: 'credit-details', data: customer.id }
+            });
+        } catch (error) {
+            console.error('Error loading bill for editing:', error);
+            setToast({ message: 'Failed to load bill for editing', type: 'error' });
+        }
+    };
+
+    // Open the payment form for a NEW payment (amount pre-filled for Full Settlement)
+    const openNewPayment = (amount) => {
+        setEditingPaymentId(null);
+        setPaymentAmount(amount);
+        setPaymentDate(getTodayLocaleDate());
+        setShowPaymentForm(true);
+    };
+
+    // Open the same form to correct an existing payment
+    const openEditPayment = (payment) => {
+        setEditingPaymentId(payment.id);
+        setPaymentAmount(payment.amount.toString());
+        setPaymentDate(payment.date);
+        setShowPaymentForm(true);
+    };
+
+    const handleDeletePayment = (payment) => {
+        setConfirmDialog({
+            message: `Delete the payment of ₹${formatMoney(payment.amount)} on ${formatToDisplayDate(payment.date)}? The customer's pending balance will go up by this amount.`,
+            onConfirm: async () => {
+                try {
+                    await window.electronAPI.deleteCreditPayment(payment.id);
+                    setToast({ message: 'Payment deleted', type: 'success' });
+                    loadCustomerDetails();
+                } catch (error) {
+                    console.error('Error deleting payment:', error);
+                    setToast({ message: 'Failed to delete payment', type: 'error' });
+                } finally {
+                    setConfirmDialog(null);
+                }
+            },
+            onCancel: () => setConfirmDialog(null)
+        });
+    };
+
     const handleAddPayment = async (e) => {
         e.preventDefault();
         const amount = parseFloat(paymentAmount);
         if (isNaN(amount) || amount <= 0) return;
+
+        if (editingPaymentId) {
+            try {
+                await window.electronAPI.updateCreditPayment(editingPaymentId, amount, paymentDate);
+                setToast({ message: 'Payment updated', type: 'success' });
+                setEditingPaymentId(null);
+                setPaymentAmount('');
+                setShowPaymentForm(false);
+                loadCustomerDetails();
+            } catch (error) {
+                console.error('Error updating payment:', error);
+                setToast({ message: 'Failed to update payment', type: 'error' });
+            }
+            return;
+        }
 
         try {
             await window.electronAPI.addCreditPayment(customerId, amount, paymentDate);
@@ -121,13 +221,14 @@ function CreditDetailsPage({ onNavigate, customerId }) {
         }
     };
 
-    const handlePrintSummary = async (e) => {
+    // Load bills for the range and open the Summary Preview page (printing happens there)
+    const handlePreviewSummary = async (e) => {
         e.preventDefault();
         setIsSummaryLoading(true);
         try {
             const billsInPeriod = await window.electronAPI.getBillsByDateRange(
-                customer.id, 
-                summaryStartDate, 
+                customer.id,
+                summaryStartDate,
                 summaryEndDate
             );
 
@@ -136,21 +237,22 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                 return;
             }
 
-            const total = billsInPeriod.reduce((sum, b) => sum + b.daily_total, 0);
-            
-            await window.electronAPI.printCreditSummary({
+            const total = roundMoney(billsInPeriod.reduce((sum, b) => sum + b.daily_total, 0));
+            const data = {
                 customerName: customer.name,
                 startDate: formatToDisplayDate(summaryStartDate),
                 endDate: formatToDisplayDate(summaryEndDate),
                 bills: billsInPeriod,
                 total: total
+            };
+            onNavigate('summary-preview', {
+                customerId: customer.id,
+                summaryRange: { start: summaryStartDate, end: summaryEndDate },
+                data
             });
-
-            setToast({ message: '✅ Summary bill sent to printer', type: 'success' });
-            setShowSummaryModal(false);
         } catch (error) {
-            console.error('Error printing summary:', error);
-            setToast({ message: 'Failed to print summary bill', type: 'error' });
+            console.error('Error preparing summary preview:', error);
+            setToast({ message: 'Failed to load summary preview', type: 'error' });
         } finally {
             setIsSummaryLoading(false);
         }
@@ -163,6 +265,9 @@ function CreditDetailsPage({ onNavigate, customerId }) {
         </div>
     );
 
+    // Deleted customers are opened from Credits → "Show deleted customers": history is read-only
+    const isDeleted = customer.is_deleted === 1;
+
     return (
         <div className="details-page">
             <PageHeader onNavigate={onNavigate} backTo="credits" />
@@ -173,26 +278,42 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                     <div className="name-and-phone">
                         <div className="name-with-actions">
                             <h1 className="customer-name">{customer.name}</h1>
-                            <button
-                                className="delete-customer-btn"
-                                onClick={() => setShowDeleteConfirm(true)}
-                                title="Delete this customer"
-                            >
-                                <i className="fa-solid fa-trash-can"></i>
-                            </button>
+                            {isDeleted ? (
+                                <>
+                                    <span className="customer-deleted-tag">Deleted</span>
+                                    <button className="restore-customer-btn" onClick={handleRestore} title="Restore this customer">
+                                        <i className="fa-solid fa-rotate-left"></i> Restore
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    className="delete-customer-btn"
+                                    onClick={() => setShowDeleteConfirm(true)}
+                                    title="Delete this customer"
+                                >
+                                    <i className="fa-solid fa-trash-can"></i>
+                                </button>
+                            )}
                         </div>
                         <p className="customer-phone"><i className="fa-solid fa-mobile-screen-button"></i> {customer.phone || 'No phone provided'}</p>
                     </div>
                     <div className="balance-card">
                         <span className="balance-label">Pending Balance</span>
                         <h2 className={`balance-value ${(customer.balance || 0) > 0 ? 'pending' : ''}`}>
-                            ₹{(customer.balance || 0).toFixed(0)}
+                            ₹{formatMoney(customer.balance)}
                         </h2>
                     </div>
                 </div>
 
+                {isDeleted && (
+                    <div className="deleted-customer-banner">
+                        <i className="fa-solid fa-lock"></i> This customer was deleted. Their history is read-only — Restore them to add bills or payments.
+                    </div>
+                )}
+
                 {/* Actions */}
                 <div className="details-actions">
+                    {!isDeleted && (<>
                     <button
                         className="new-bill-btn"
                         onClick={() => onNavigate('billing', { creditCustomerId: customer.id, customerName: customer.name })}
@@ -201,20 +322,18 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                     </button>
                     <button
                         className="payment-btn"
-                        onClick={() => setShowPaymentForm(true)}
+                        onClick={() => openNewPayment('')}
                     >
                         <i className="fa-solid fa-wallet"></i> Add Payment
                     </button>
                     <button
                         className="settle-btn"
-                        onClick={() => {
-                            setPaymentAmount(customer.balance.toString());
-                            setShowPaymentForm(true);
-                        }}
+                        onClick={() => openNewPayment(roundMoney(customer.balance).toString())}
                         disabled={customer.balance <= 0}
                     >
                         <i className="fa-solid fa-check-double"></i> Full Settlement
                     </button>
+                    </>)}
                     <button
                         className="summary-btn"
                         onClick={() => setShowSummaryModal(true)}
@@ -246,9 +365,11 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                             <tr key={bill.id}>
                                                 <td>{formatToDisplayDate(bill.date)}</td>
                                                 <td>#{bill.id}</td>
-                                                <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
+                                                <td className="bold">₹{formatMoney(bill.total_amount)}</td>
                                                 <td className="actions-cell">
                                                     <button className="view-btn" onClick={() => viewBillDetails(bill)}>View Bill</button>
+                                                    {!isDeleted && (<>
+                                                    <button className="view-btn" onClick={() => handleEditBill(bill)}>Edit</button>
                                                     <button 
                                                         className="delete-bill-btn-small" 
                                                         onClick={() => setBillToDelete(bill)}
@@ -256,6 +377,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                                     >
                                                         <i className="fa-solid fa-trash-can"></i>
                                                     </button>
+                                                    </>)}
                                                 </td>
                                             </tr>
                                         ))}
@@ -277,13 +399,26 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                         <tr>
                                             <th>Date</th>
                                             <th>Amount</th>
+                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {customer.payments.map((p) => (
                                             <tr key={p.id}>
                                                 <td>{formatToDisplayDate(p.date)}</td>
-                                                <td className="paid-amount">₹{p.amount.toFixed(0)}</td>
+                                                <td className="paid-amount">₹{formatMoney(p.amount)}</td>
+                                                <td className="actions-cell">
+                                                    {!isDeleted && (<>
+                                                    <button className="view-btn" onClick={() => openEditPayment(p)}>Edit</button>
+                                                    <button
+                                                        className="delete-bill-btn-small"
+                                                        onClick={() => handleDeletePayment(p)}
+                                                        title="Delete this payment"
+                                                    >
+                                                        <i className="fa-solid fa-trash-can"></i>
+                                                    </button>
+                                                    </>)}
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -298,7 +433,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
             {showPaymentForm && (
                 <div className="modal-overlay">
                     <div className="modal-content">
-                        <h2>Record Payment / Settlement</h2>
+                        <h2>{editingPaymentId ? 'Edit Payment' : 'Record Payment / Settlement'}</h2>
                         <form onSubmit={handleAddPayment}>
                             <div className="form-group">
                                 <label>Amount (₹) *</label>
@@ -314,7 +449,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                     <button
                                         type="button"
                                         className="settle-shortcut-btn"
-                                        onClick={() => setPaymentAmount(customer.balance.toString())}
+                                        onClick={() => setPaymentAmount(roundMoney(customer.balance).toString())}
                                     >
                                         Full Balance
                                     </button>
@@ -329,8 +464,8 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                 />
                             </div>
                             <div className="modal-actions">
-                                <button type="button" className="cancel-btn" onClick={() => setShowPaymentForm(false)}>Cancel</button>
-                                <button type="submit" className="save-btn">Save Payment</button>
+                                <button type="button" className="cancel-btn" onClick={() => { setShowPaymentForm(false); setEditingPaymentId(null); }}>Cancel</button>
+                                <button type="submit" className="save-btn">{editingPaymentId ? 'Update Payment' : 'Save Payment'}</button>
                             </div>
                         </form>
                     </div>
@@ -345,7 +480,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                         <p style={{ marginBottom: '15px', color: '#666', fontSize: '14px' }}>
                             Choose a date range to list all total bill amounts per day for <strong>{customer.name}</strong>.
                         </p>
-                        <form onSubmit={handlePrintSummary}>
+                        <form onSubmit={handlePreviewSummary}>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>From Date</label>
@@ -369,7 +504,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                             <div className="modal-actions">
                                 <button type="button" className="cancel-btn" onClick={() => setShowSummaryModal(false)}>Cancel</button>
                                 <button type="submit" className="save-btn" disabled={isSummaryLoading}>
-                                    <i className="fa-solid fa-print"></i> {isSummaryLoading ? 'Printing...' : 'Print Summary'}
+                                    <i className="fa-solid fa-eye"></i> {isSummaryLoading ? 'Loading...' : 'Preview'}
                                 </button>
                             </div>
                         </form>
@@ -384,15 +519,31 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                         <div className="confirm-icon">
                             <i className="fa-solid fa-triangle-exclamation"></i>
                         </div>
-                        <h2>Delete Customer?</h2>
-                        <p className="confirm-text">
-                            Are you sure you want to delete <strong>{customer.name}</strong>?
-                            This will permanently remove all their credit and payment records.
-                        </p>
-                        <div className="modal-actions">
-                            <button className="confirm-cancel-btn" onClick={() => setShowDeleteConfirm(false)}>No, Keep</button>
-                            <button className="confirm-delete-btn" onClick={confirmDelete}>Yes, Delete</button>
-                        </div>
+                        {roundMoney(customer.balance) > 0 ? (
+                            // Not fully paid: can't delete until the balance is cleared with payments
+                            <>
+                                <h2>Can't Delete Yet</h2>
+                                <p className="confirm-text">
+                                    <strong>{customer.name}</strong> still owes <strong>₹{formatMoney(customer.balance)}</strong>.
+                                    A customer can be deleted only after they have fully paid.
+                                </p>
+                                <div className="modal-actions">
+                                    <button className="confirm-cancel-btn" onClick={() => setShowDeleteConfirm(false)}>OK</button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <h2>Delete Customer?</h2>
+                                <p className="confirm-text">
+                                    Are you sure you want to delete <strong>{customer.name}</strong>?
+                                    They will be removed from the Credits list. Their bills and payments stay in Records.
+                                </p>
+                                <div className="modal-actions">
+                                    <button className="confirm-cancel-btn" onClick={() => setShowDeleteConfirm(false)}>No, Keep</button>
+                                    <button className="confirm-delete-btn" onClick={confirmDelete}>Yes, Delete</button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}
@@ -432,15 +583,15 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                             <tr key={idx}>
                                                 <td>{item.name_tamil || item.name_english}</td>
                                                 <td>{item.quantity}</td>
-                                                <td>₹{item.rate.toFixed(0)}</td>
-                                                <td>₹{(item.rate * item.quantity).toFixed(0)}</td>
+                                                <td>₹{formatMoney(item.rate)}</td>
+                                                <td>₹{formatMoney(item.rate * item.quantity)}</td>
                                             </tr>
                                         ))}
                                     </tbody>
                                     <tfoot>
                                         <tr className="bill-total-row">
                                             <td colSpan="3">TOTAL</td>
-                                            <td>₹{selectedBill.total_amount.toFixed(0)}</td>
+                                            <td>₹{formatMoney(selectedBill.total_amount)}</td>
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -450,6 +601,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                 </div>
             )}
 
+            {confirmDialog && <ConfirmDialog message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} />}
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
             {showSuccessModal && (
@@ -469,7 +621,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                         </div>
                         <h2>Delete Bill?</h2>
                         <p className="confirm-text">
-                            Are you sure you want to delete <strong>Bill #{billToDelete.id}</strong> worth <strong>₹{billToDelete.total_amount.toFixed(0)}</strong>?
+                            Are you sure you want to delete <strong>Bill #{billToDelete.id}</strong> worth <strong>₹{formatMoney(billToDelete.total_amount)}</strong>?
                             This will permanently remove it from the history and update the customer's balance.
                         </p>
                         <div className="modal-actions">

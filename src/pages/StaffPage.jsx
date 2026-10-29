@@ -5,6 +5,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Footer from '../components/Footer';
 import { formatToDisplayDate, getTodayLocaleDate } from '../utils/DateUtils';
 import './StaffPage.css';
+import { formatMoney, roundMoney } from '../utils/money';
 
 function StaffPage({ onNavigate }) {
     const [isLoading, setIsLoading] = useState(false);
@@ -15,8 +16,12 @@ function StaffPage({ onNavigate }) {
     const [selectedStaffDetail, setSelectedStaffDetail] = useState(null);
     const [showAddStaffForm, setShowAddStaffForm] = useState(false);
     const [showEditStaffForm, setShowEditStaffForm] = useState(false);
-    const [newStaff, setNewStaff] = useState({ name: '' });
+    const emptyNewStaff = () => ({ name: '', staff_type: 'NORMAL', daily_wage: '', auto_wage: true, wage_start_date: getTodayLocaleDate() });
+    const [newStaff, setNewStaff] = useState(emptyNewStaff);
     const [editingStaff, setEditingStaff] = useState(null);
+
+    // Absent (one employee) / Shop holiday (everyone) date picker: { type: 'ABSENT' | 'HOLIDAY', date }
+    const [skipForm, setSkipForm] = useState(null);
 
     const [showTransactionForm, setShowTransactionForm] = useState(false);
     const [transactionType, setTransactionType] = useState('WAGE'); // 'WAGE' or 'PAYMENT'
@@ -26,13 +31,14 @@ function StaffPage({ onNavigate }) {
     const [transDate, setTransDate] = useState(getTodayLocaleDate());
 
     useEffect(() => {
-        loadStaff(false);
+        loadStaff();
     }, []);
 
-    async function loadStaff(showInactive) {
+    // Inactive (discharged) employees are listed too, below the active ones, so they can be found and re-activated
+    async function loadStaff() {
         try {
-            const data = await window.electronAPI.getStaffList(showInactive);
-            setStaffList(data || []);
+            const data = await window.electronAPI.getStaffList(true);
+            setStaffList((data || []).sort((a, b) => b.is_active - a.is_active));
         } catch (error) {
             console.error('Error loading staff:', error);
         }
@@ -50,14 +56,27 @@ function StaffPage({ onNavigate }) {
         }
     }
 
+    // Returns the wage settings to save, or null (with a warning) if auto wage is on without an amount
+    const readWageSettings = (staff) => {
+        const dailyWage = parseFloat(staff.daily_wage) || 0;
+        const autoWage = !!staff.auto_wage;
+        if (autoWage && dailyWage <= 0) {
+            setToast({ message: 'Enter a daily wage to turn on auto wage', type: 'warning' });
+            return null;
+        }
+        return { dailyWage, autoWage, wageStartDate: staff.wage_start_date || null };
+    };
+
     const handleAddStaff = async (e) => {
         e.preventDefault();
         if (!newStaff.name.trim()) return;
+        const wage = readWageSettings(newStaff);
+        if (!wage) return;
         try {
-            await window.electronAPI.addEmployee(newStaff.name, 0);
-            setNewStaff({ name: '' });
+            await window.electronAPI.addEmployee(newStaff.name, wage.dailyWage, wage.autoWage, wage.wageStartDate, newStaff.staff_type);
+            setNewStaff(emptyNewStaff());
             setShowAddStaffForm(false);
-            loadStaff(false);
+            loadStaff();
             setToast({ message: '✅ Employee added successfully', type: 'success' });
         } catch (error) {
             setToast({ message: '❌ Failed to add employee', type: 'error' });
@@ -67,16 +86,21 @@ function StaffPage({ onNavigate }) {
     const handleUpdateStaff = async (e) => {
         e.preventDefault();
         if (!editingStaff.name.trim()) return;
+        const wage = readWageSettings(editingStaff);
+        if (!wage) return;
         try {
             await window.electronAPI.updateEmployee(
-                editingStaff.id, 
-                editingStaff.name, 
-                0, 
-                editingStaff.is_active
+                editingStaff.id,
+                editingStaff.name,
+                wage.dailyWage,
+                editingStaff.is_active,
+                wage.autoWage,
+                wage.wageStartDate,
+                editingStaff.staff_type || 'NORMAL'
             );
             setShowEditStaffForm(false);
             setEditingStaff(null);
-            loadStaff(false);
+            loadStaff();
             if (selectedStaffDetail?.id === editingStaff.id) {
                 loadStaffDetails(editingStaff.id);
             }
@@ -94,7 +118,7 @@ function StaffPage({ onNavigate }) {
                 try {
                     await window.electronAPI.deleteEmployee(staff.id);
                     setToast({ message: '✅ Employee deleted', type: 'success' });
-                    loadStaff(false);
+                    loadStaff();
                     setSelectedStaffDetail(null);
                 } catch (error) {
                     setToast({ message: '❌ Failed to delete employee', type: 'error' });
@@ -151,6 +175,45 @@ function StaffPage({ onNavigate }) {
         });
     };
 
+    // Mark Absent (selected employee) or Shop Holiday (everyone on auto wage) for a date
+    const handleSaveSkip = async (e) => {
+        e.preventDefault();
+        try {
+            if (skipForm.type === 'ABSENT') {
+                await window.electronAPI.markEmployeeAbsent(selectedStaffDetail.id, skipForm.date);
+                setToast({ message: `✅ Marked absent on ${formatToDisplayDate(skipForm.date)}`, type: 'success' });
+                loadStaffDetails(selectedStaffDetail.id);
+            } else {
+                await window.electronAPI.markShopHoliday(skipForm.date);
+                setToast({ message: `✅ Shop holiday on ${formatToDisplayDate(skipForm.date)} — no auto wages`, type: 'success' });
+            }
+            loadStaff();
+            setSkipForm(null);
+        } catch (error) {
+            setToast({ message: '❌ Failed to save', type: 'error' });
+        }
+    };
+
+    // Undo Absent / Holiday for this employee: the day's auto wage is added back
+    const handleRemoveSkip = (skip) => {
+        setConfirmDialog({
+            message: `Remove ${skip.reason === 'ABSENT' ? 'absent' : 'holiday'} on ${formatToDisplayDate(skip.skip_date)}? The daily wage for that day will be added back.`,
+            onConfirm: async () => {
+                try {
+                    await window.electronAPI.removeWageSkip(selectedStaffDetail.id, skip.skip_date);
+                    setToast({ message: '✅ Daily wage added back', type: 'success' });
+                    loadStaffDetails(selectedStaffDetail.id);
+                    loadStaff();
+                } catch (error) {
+                    setToast({ message: '❌ Failed to update', type: 'error' });
+                } finally {
+                    setConfirmDialog(null);
+                }
+            },
+            onCancel: () => setConfirmDialog(null)
+        });
+    };
+
     const handleEditTransaction = (t) => {
         setEditingTransactionId(t.id);
         setTransactionType(t.type);
@@ -159,6 +222,72 @@ function StaffPage({ onNavigate }) {
         setTransDate(t.transaction_date);
         setShowTransactionForm(true);
     };
+
+    // Staff type + daily wage / auto wage / start date inputs, shared by the Add and Edit employee forms
+    const renderWageFields = (staff, setStaff) => (
+        <>
+            <div className="form-group">
+                <label>Staff Type</label>
+                <div className="staff-type-options">
+                    {[
+                        { value: 'SERVING', label: 'Serving Staff', hint: 'Can be selected on bills' },
+                        { value: 'NORMAL', label: 'Normal Staff', hint: 'Wages only, not on bills' },
+                    ].map((t) => (
+                        <button
+                            key={t.value}
+                            type="button"
+                            className={`staff-type-option ${(staff.staff_type || 'NORMAL') === t.value ? 'active' : ''}`}
+                            onClick={() => setStaff({ ...staff, staff_type: t.value })}
+                        >
+                            <strong>{t.label}</strong>
+                            <small>{t.hint}</small>
+                        </button>
+                    ))}
+                </div>
+            </div>
+            <div className="form-group">
+                <label>Daily Wage (₹)</label>
+                <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={staff.daily_wage ?? ''}
+                    onChange={(e) => setStaff({ ...staff, daily_wage: e.target.value })}
+                    placeholder="e.g. 500"
+                />
+            </div>
+            <div className="form-group">
+                <label className="chk-label">
+                    <input
+                        type="checkbox"
+                        className="status-chk"
+                        checked={!!staff.auto_wage}
+                        onChange={(e) => setStaff({ ...staff, auto_wage: e.target.checked })}
+                    />
+                    Add daily wage automatically
+                </label>
+                <p className="help-text">Added every day the app is opened. Use Mark Absent / Shop Holiday for days off.</p>
+            </div>
+            {!!staff.auto_wage && (
+                <div className="form-group">
+                    <label>Auto Wage Starts From</label>
+                    <input
+                        type="date"
+                        value={staff.wage_start_date || ''}
+                        onChange={(e) => setStaff({ ...staff, wage_start_date: e.target.value })}
+                    />
+                </div>
+            )}
+        </>
+    );
+
+    // Wage/payment entries and absent/holiday days in one list, newest date first
+    const historyRows = selectedStaffDetail
+        ? [
+            ...selectedStaffDetail.transactions.map(t => ({ date: t.transaction_date, transaction: t })),
+            ...(selectedStaffDetail.skips || []).map(s => ({ date: s.skip_date, skip: s })),
+        ].sort((a, b) => b.date.localeCompare(a.date))
+        : [];
 
     return (
         <div className="staff-page">
@@ -173,6 +302,9 @@ function StaffPage({ onNavigate }) {
                                 <p className="view-subtitle">Manage wages and salary records</p>
                             </div>
                             <div className="header-actions">
+                                <button className="add-btn holiday-btn" onClick={() => setSkipForm({ type: 'HOLIDAY', date: getTodayLocaleDate() })}>
+                                    <i className="fas fa-umbrella-beach"></i> Shop Holiday
+                                </button>
                                 <button className="add-btn" onClick={() => setShowAddStaffForm(true)}>+ New Employee</button>
                             </div>
                         </div>
@@ -189,6 +321,7 @@ function StaffPage({ onNavigate }) {
                                         <tr>
                                             <th>Status</th>
                                             <th>Employee Name</th>
+                                            <th>Daily Wage</th>
                                             <th className="text-right">Total Payable (₹)</th>
                                             <th className="text-center">Manage</th>
                                         </tr>
@@ -201,10 +334,15 @@ function StaffPage({ onNavigate }) {
                                                 </td>
                                                 <td className="name-cell">
                                                     {s.name}
+                                                    {s.staff_type === 'SERVING' && <span className="serving-tag">Serving</span>}
                                                     {!s.is_active && <span className="discharged-tag">Discharged</span>}
                                                 </td>
+                                                <td className="wage-cell">
+                                                    {s.daily_wage > 0 ? `₹${formatMoney(s.daily_wage, { grouping: true })}/day` : '-'}
+                                                    {s.auto_wage === 1 && s.daily_wage > 0 && <span className="auto-tag">AUTO</span>}
+                                                </td>
                                                 <td className={`amount-cell balance text-right ${s.balance > 0 ? 'pending' : ''}`}>
-                                                    ₹{s.balance?.toLocaleString()}
+                                                    ₹{formatMoney(s.balance, { grouping: true })}
                                                 </td>
                                                 <td className="text-center actions-column" onClick={(e) => e.stopPropagation()}>
                                                     <button className="icon-btn edit" onClick={() => { setEditingStaff({ ...s }); setShowEditStaffForm(true); }}>
@@ -241,13 +379,24 @@ function StaffPage({ onNavigate }) {
                             <div className="staff-main-info">
                                 <h1 className="staff-name">
                                     {selectedStaffDetail.name}
+                                    {selectedStaffDetail.staff_type === 'SERVING' && <span className="serving-tag big">Serving</span>}
                                     {!selectedStaffDetail.is_active && <span className="discharged-tag big">Discharged</span>}
                                 </h1>
+                                <p className="staff-wage-info">
+                                    {selectedStaffDetail.daily_wage > 0
+                                        ? `₹${formatMoney(selectedStaffDetail.daily_wage, { grouping: true })}/day`
+                                        : 'No daily wage set'}
+                                    {selectedStaffDetail.auto_wage === 1 && selectedStaffDetail.daily_wage > 0 && (
+                                        <span className="auto-tag">
+                                            AUTO{selectedStaffDetail.wage_start_date ? ` from ${formatToDisplayDate(selectedStaffDetail.wage_start_date)}` : ''}
+                                        </span>
+                                    )}
+                                </p>
                             </div>
                             <div className="staff-balance-card">
                                 <span className="bal-label">Total Payable</span>
                                 <h2 className={`bal-value ${selectedStaffDetail.balance > 0 ? 'pending' : ''}`}>
-                                    ₹{selectedStaffDetail.balance?.toLocaleString()}
+                                    ₹{formatMoney(selectedStaffDetail.balance, { grouping: true })}
                                 </h2>
                             </div>
                         </div>
@@ -276,13 +425,18 @@ function StaffPage({ onNavigate }) {
                             <button className="action-btn settle-btn" disabled={selectedStaffDetail.balance <= 0} onClick={() => { 
                                 setTransactionType('PAYMENT'); 
                                 setEditingTransactionId(null); 
-                                setTransAmount(selectedStaffDetail.balance.toString()); 
+                                setTransAmount(roundMoney(selectedStaffDetail.balance).toString()); 
                                 setTransDesc('Salary Settlement'); 
                                 setTransDate(getTodayLocaleDate());
                                 setShowTransactionForm(true); 
                             }}>
                                 <i className="fas fa-check-double"></i> Settle All
                             </button>
+                            {selectedStaffDetail.auto_wage === 1 && (
+                                <button className="action-btn absent-btn" onClick={() => setSkipForm({ type: 'ABSENT', date: getTodayLocaleDate() })}>
+                                    <i className="fas fa-user-slash"></i> Mark Absent
+                                </button>
+                            )}
                         </div>
 
                         <div className="history-section">
@@ -299,7 +453,26 @@ function StaffPage({ onNavigate }) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {selectedStaffDetail.transactions.map(t => (
+                                        {historyRows.map(({ skip: s, transaction: t }) => s ? (
+                                            // Absent / holiday day: no wage, can be undone
+                                            <tr key={`skip-${s.skip_date}`} className="skip-row">
+                                                <td>{formatToDisplayDate(s.skip_date)}</td>
+                                                <td>
+                                                    <span className={`type-badge ${s.reason === 'ABSENT' ? 'absent' : 'holiday'}`}>
+                                                        {s.reason === 'ABSENT' ? 'Absent' : 'Holiday'}
+                                                    </span>
+                                                </td>
+                                                <td>No wage for this day</td>
+                                                <td>-</td>
+                                                <td>
+                                                    <div className="actions-cell">
+                                                        <button className="icon-btn edit" title="Undo — add the wage back" onClick={() => handleRemoveSkip(s)}>
+                                                            <i className="fas fa-rotate-left"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
                                             <tr key={t.id}>
                                                 <td>{formatToDisplayDate(t.transaction_date)}</td>
                                                 <td>
@@ -309,7 +482,7 @@ function StaffPage({ onNavigate }) {
                                                 </td>
                                                 <td>{t.description || '-'}</td>
                                                 <td className={t.type === 'WAGE' ? 'amt-wage' : 'amt-payment'}>
-                                                    ₹{t.amount.toLocaleString()}
+                                                    ₹{formatMoney(t.amount, { grouping: true })}
                                                 </td>
                                                 <td>
                                                     <div className="actions-cell">
@@ -331,12 +504,16 @@ function StaffPage({ onNavigate }) {
             {showAddStaffForm && (
                 <div className="modal-overlay">
                     <div className="modal-content">
+                        <button type="button" className="modal-close-btn" title="Close" onClick={() => setShowAddStaffForm(false)}>
+                            <i className="fas fa-xmark"></i>
+                        </button>
                         <h2>Add New Employee</h2>
                         <form onSubmit={handleAddStaff}>
                             <div className="form-group">
                                 <label>Full Name</label>
                                 <input type="text" required value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} autoFocus />
                             </div>
+                            {renderWageFields(newStaff, setNewStaff)}
                             <div className="modal-actions">
                                 <button type="button" className="btn-cancel" onClick={() => setShowAddStaffForm(false)}>Cancel</button>
                                 <button type="submit" className="btn-save">Save</button>
@@ -349,6 +526,9 @@ function StaffPage({ onNavigate }) {
             {showEditStaffForm && editingStaff && (
                 <div className="modal-overlay">
                     <div className="modal-content">
+                        <button type="button" className="modal-close-btn" title="Close" onClick={() => { setShowEditStaffForm(false); setEditingStaff(null); }}>
+                            <i className="fas fa-xmark"></i>
+                        </button>
                         <h2>Edit Employee Information</h2>
                         <form onSubmit={handleUpdateStaff}>
                              <div className="form-group">
@@ -357,9 +537,10 @@ function StaffPage({ onNavigate }) {
                                     type="text" 
                                     required 
                                     value={editingStaff.name} 
-                                    onChange={(e) => setEditingStaff({ ...editingStaff, name: e.target.value })} 
+                                    onChange={(e) => setEditingStaff({ ...editingStaff, name: e.target.value })}
                                 />
                             </div>
+                            {renderWageFields(editingStaff, setEditingStaff)}
                             <div className="form-group">
                                 <label className="chk-label">
                                     <input 
@@ -381,9 +562,38 @@ function StaffPage({ onNavigate }) {
                 </div>
             )}
 
+            {skipForm && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <button type="button" className="modal-close-btn" title="Close" onClick={() => setSkipForm(null)}>
+                            <i className="fas fa-xmark"></i>
+                        </button>
+                        <h2>{skipForm.type === 'ABSENT' ? `Mark ${selectedStaffDetail?.name} Absent` : 'Shop Holiday'}</h2>
+                        <p className="help-text skip-help">
+                            {skipForm.type === 'ABSENT'
+                                ? 'No daily wage will be added for this day. If it was already added, it is removed.'
+                                : 'No daily wage for any employee on auto wage for this day. Already added wages for the day are removed.'}
+                        </p>
+                        <form onSubmit={handleSaveSkip}>
+                            <div className="form-group">
+                                <label>Date</label>
+                                <input type="date" required value={skipForm.date} onChange={(e) => setSkipForm({ ...skipForm, date: e.target.value })} />
+                            </div>
+                            <div className="modal-actions">
+                                <button type="button" className="btn-cancel" onClick={() => setSkipForm(null)}>Cancel</button>
+                                <button type="submit" className="btn-save">{skipForm.type === 'ABSENT' ? 'Mark Absent' : 'Mark Holiday'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {showTransactionForm && (
                 <div className="modal-overlay">
                     <div className="modal-content">
+                        <button type="button" className="modal-close-btn" title="Close" onClick={() => { setShowTransactionForm(false); setEditingTransactionId(null); }}>
+                            <i className="fas fa-xmark"></i>
+                        </button>
                         <h2>{editingTransactionId ? 'Edit Entry' : (transactionType === 'WAGE' ? 'Add Wage' : 'Give Cash')}</h2>
                         <form onSubmit={handleSaveTransaction}>
                             <div className="form-group">

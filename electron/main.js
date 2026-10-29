@@ -5,6 +5,7 @@ const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
+const creditStatementExport = require('./creditStatementExport');
 
 // Force dd/mm/yyyy date format by setting locale
 app.commandLine.appendSwitch('lang', 'en-GB');
@@ -112,6 +113,22 @@ app.whenReady().then(async () => {
 
   // Initialize the database
   await db.initializeDatabase();
+
+  // Auto daily wages: credit today now, and again whenever the date changes while the app stays open
+  let lastWageRunDate = null;
+  const runDailyWagesIfNewDay = () => {
+    const today = new Date().toDateString();
+    if (today === lastWageRunDate) return;
+    try {
+      const { credited } = db.runDailyWages();
+      lastWageRunDate = today;
+      if (credited > 0) logger.log(`💰 Auto daily wages credited for ${credited} employee(s)`, 'INFO');
+    } catch (error) {
+      logger.log(`❌ Auto daily wages failed: ${error.message}`, 'ERROR');
+    }
+  };
+  runDailyWagesIfNewDay();
+  setInterval(runDailyWagesIfNewDay, 60 * 1000);
 
   // Set up IPC handlers (communication between React and Electron)
   setupIPCHandlers();
@@ -260,9 +277,9 @@ function setupIPCHandlers() {
   });
 
   // Add new item
-  ipcMain.handle('db:addItem', async (event, nameTamil, nameEnglish, price, imagePath, category) => {
+  ipcMain.handle('db:addItem', async (event, nameTamil, nameEnglish, price, imagePath, category, nameHindi) => {
     try {
-      return db.addItem(nameTamil, nameEnglish, price, imagePath, category);
+      return db.addItem(nameTamil, nameEnglish, price, imagePath, category, nameHindi);
     } catch (error) {
       console.error('Error adding item:', error);
       throw error;
@@ -270,12 +287,33 @@ function setupIPCHandlers() {
   });
 
   // Update item
-  ipcMain.handle('db:updateItem', async (event, id, nameTamil, nameEnglish, price, imagePath, category) => {
+  ipcMain.handle('db:updateItem', async (event, id, nameTamil, nameEnglish, price, imagePath, category, nameHindi) => {
     try {
-      db.updateItem(id, nameTamil, nameEnglish, price, imagePath, category);
+      db.updateItem(id, nameTamil, nameEnglish, price, imagePath, category, nameHindi);
       return { success: true };
     } catch (error) {
       console.error('Error updating item:', error);
+      throw error;
+    }
+  });
+
+  // Get an app setting (e.g. default bill print language)
+  ipcMain.handle('db:getSetting', async (event, key, defaultValue) => {
+    try {
+      return db.getSetting(key, defaultValue);
+    } catch (error) {
+      console.error('Error getting setting:', error);
+      throw error;
+    }
+  });
+
+  // Save an app setting
+  ipcMain.handle('db:setSetting', async (event, key, value) => {
+    try {
+      db.setSetting(key, value);
+      return { success: true };
+    } catch (error) {
+      console.error('Error saving setting:', error);
       throw error;
     }
   });
@@ -469,9 +507,9 @@ function setupIPCHandlers() {
   });
 
   // Get all credit customers
-  ipcMain.handle('db:getAllCreditCustomers', async (event) => {
+  ipcMain.handle('db:getAllCreditCustomers', async (event, includeDeleted) => {
     try {
-      return db.getAllCreditCustomers();
+      return db.getAllCreditCustomers(Boolean(includeDeleted));
     } catch (error) {
       console.error('Error getting credit customers:', error);
       throw error;
@@ -498,7 +536,34 @@ function setupIPCHandlers() {
     }
   });
 
+  ipcMain.handle('db:updateCreditPayment', async (event, paymentId, amount, date) => {
+    try {
+      return db.updateCreditPayment(paymentId, amount, date);
+    } catch (error) {
+      console.error('Error updating credit payment:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:deleteCreditPayment', async (event, paymentId) => {
+    try {
+      return db.deleteCreditPayment(paymentId);
+    } catch (error) {
+      console.error('Error deleting credit payment:', error);
+      throw error;
+    }
+  });
+
   // Delete credit customer
+  ipcMain.handle('db:restoreCreditCustomer', async (event, id) => {
+    try {
+      return db.restoreCreditCustomer(id);
+    } catch (error) {
+      console.error('Error restoring credit customer:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('db:deleteCreditCustomer', async (event, id) => {
     try {
       return db.deleteCreditCustomer(id);
@@ -640,6 +705,15 @@ function setupIPCHandlers() {
   });
 
   // Get all suppliers (admin)
+  ipcMain.handle('db:getSuppliersForReports', async () => {
+    try {
+      return db.getSuppliersForReports();
+    } catch (error) {
+      console.error('Error getting staff for reports:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('db:getAllSuppliersAdmin', async () => {
     try {
       return db.getAllSuppliersAdmin();
@@ -689,20 +763,68 @@ function setupIPCHandlers() {
     }
   });
 
-  ipcMain.handle('db:addEmployee', async (event, name, dailyWage) => {
+  ipcMain.handle('db:addEmployee', async (event, name, dailyWage, autoWage, wageStartDate, staffType) => {
     try {
-      return db.addEmployee(name, dailyWage);
+      return db.addEmployee(name, dailyWage, autoWage, wageStartDate, staffType);
     } catch (error) {
       console.error('Error adding employee:', error);
       throw error;
     }
   });
 
-  ipcMain.handle('db:updateEmployee', async (event, id, name, dailyWage, isActive) => {
+  ipcMain.handle('db:updateEmployee', async (event, id, name, dailyWage, isActive, autoWage, wageStartDate, staffType) => {
     try {
-      return db.updateEmployee(id, name, dailyWage, isActive);
+      return db.updateEmployee(id, name, dailyWage, isActive, autoWage, wageStartDate, staffType);
     } catch (error) {
       console.error('Error updating employee:', error);
+      throw error;
+    }
+  });
+
+  // ========== AUTO DAILY WAGES ==========
+
+  // Credits today's wages (idempotent) and returns missed days that need the user's decision
+  ipcMain.handle('wages:getPendingDays', async () => {
+    try {
+      return db.runDailyWages().pendingDays;
+    } catch (error) {
+      console.error('Error checking pending wage days:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wages:resolvePendingDays', async (event, datesToCredit) => {
+    try {
+      return db.resolvePendingWageDays(datesToCredit);
+    } catch (error) {
+      console.error('Error resolving pending wage days:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wages:markAbsent', async (event, employeeId, date) => {
+    try {
+      return db.markEmployeeAbsent(employeeId, date);
+    } catch (error) {
+      console.error('Error marking absent:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wages:markHoliday', async (event, date) => {
+    try {
+      return db.markShopHoliday(date);
+    } catch (error) {
+      console.error('Error marking holiday:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wages:removeSkip', async (event, employeeId, date) => {
+    try {
+      return db.removeWageSkip(employeeId, date);
+    } catch (error) {
+      console.error('Error removing absent/holiday:', error);
       throw error;
     }
   });
@@ -895,6 +1017,11 @@ function setupIPCHandlers() {
     });
   });
 
+  // PREVIEW CREDIT SUMMARY - returns the exact HTML that print:creditSummary sends to the printer
+  ipcMain.handle('print:creditSummaryPreview', async (event, data) => {
+    return generateCreditSummaryHTML(data);
+  });
+
   // PRINT CREDIT SUMMARY SILENTLY
   ipcMain.handle('print:creditSummary', async (event, data) => {
     console.log(`🖨️ Printing Credit Summary for: ${data.customerName}`);
@@ -1038,6 +1165,9 @@ function setupIPCHandlers() {
 
   // ========== SYSTEM OPERATIONS ==========
 
+  // Installed app version (package.json "version", bumped on every build:win) — shown in the footer
+  ipcMain.handle('app:getVersion', () => app.getVersion());
+
   ipcMain.handle('system:backupDatabase', async () => {
     try {
       const { filePath } = await dialog.showSaveDialog({
@@ -1056,13 +1186,64 @@ function setupIPCHandlers() {
       throw error;
     }
   });
+
+  // Export a credit customer's statement for a date range as PDF or Excel (format: 'pdf' | 'xlsx')
+  ipcMain.handle('export:creditStatement', async (event, customerId, startDate, endDate, format) => {
+    try {
+      const statement = db.getCreditStatement(customerId, startDate, endDate);
+      const isPdf = format === 'pdf';
+
+      const { filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: isPdf ? 'Save Statement as PDF' : 'Save Statement as Excel',
+        defaultPath: path.join(
+          app.getPath('documents'),
+          `${creditStatementExport.defaultFileName(statement)}.${isPdf ? 'pdf' : 'xlsx'}`
+        ),
+        filters: isPdf
+          ? [{ name: 'PDF Document', extensions: ['pdf'] }]
+          : [{ name: 'Excel Workbook', extensions: ['xlsx'] }]
+      });
+
+      if (!filePath) return { success: false };
+
+      if (isPdf) {
+        await creditStatementExport.writeStatementPDF(statement, filePath);
+      } else {
+        await creditStatementExport.writeStatementExcel(statement, filePath);
+      }
+      return { success: true, path: filePath };
+    } catch (error) {
+      console.error('Export statement error:', error);
+      throw error;
+    }
+  });
+}
+
+/**
+ * Printed amount: whole rupees as "40" (same as before), otherwise exactly 2 decimals "12.50".
+ * Keep in sync with formatMoney in src/utils/money.js
+ */
+function formatMoney(value) {
+  const amount = Math.round((Number(value) || 0) * 100) / 100;
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+}
+
+/**
+ * Pick the item name to print for the chosen language ('ta' | 'en' | 'hi').
+ * Falls back to English when the item has no name in that language.
+ * Default ('ta') keeps the original behaviour: Tamil, else English.
+ */
+function getItemPrintName(item, language) {
+  if (language === 'en') return item.name_english;
+  if (language === 'hi') return item.name_hindi || item.name_english;
+  return item.name_tamil || item.name_english;
 }
 
 /**
  * Generate HTML for thermal receipt printing
  */
 function generateBillHTML(billData) {
-  const { billNumber, items, total, hotelName, address, fssai, license, phone, email, dateTime, supplierName } = billData;
+  const { billNumber, items, total, hotelName, address, fssai, license, phone, email, dateTime, supplierName, printLanguage } = billData;
 
   // Calculate total quantity
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -1347,10 +1528,10 @@ function generateBillHTML(billData) {
         <tbody>
           ${items.map(item => `
             <tr>
-              <td class="item">${item.name_tamil || item.name_english}</td>
+              <td class="item">${getItemPrintName(item, printLanguage)}</td>
               <td class="qty">${item.quantity}</td>
-              <td class="rate">${item.price.toFixed(0)}</td>
-              <td class="total">${(item.price * item.quantity).toFixed(0)}</td>
+              <td class="rate">${formatMoney(item.price)}</td>
+              <td class="total">${formatMoney(item.price * item.quantity)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1363,7 +1544,7 @@ function generateBillHTML(billData) {
         <div class="summary-line">Items: ${items.length} | Qty: ${totalQuantity}</div>
         <div class="summary-line-flex">
           <span class="left">Sub Total</span>
-          <span class="right">${total.toFixed(0)}</span>
+          <span class="right">${formatMoney(total)}</span>
         </div>
       </div>
       
@@ -1371,7 +1552,7 @@ function generateBillHTML(billData) {
       <div class="total-section">
         <div class="total-row">
           <span class="total-label">TOTAL</span>
-          <span class="total-amount bold">${total.toFixed(0)}</span>
+          <span class="total-amount bold">${formatMoney(total)}</span>
         </div>
       </div>
       
@@ -1390,7 +1571,7 @@ function generateBillHTML(billData) {
  * Generate HTML for KOT (Staff Only)
  */
 function generateKOTHTML(billData) {
-  const { billNumber, items, dateTime, supplierName } = billData;
+  const { billNumber, items, dateTime, supplierName, printLanguage } = billData;
 
   return `
     <!DOCTYPE html>
@@ -1544,7 +1725,7 @@ function generateKOTHTML(billData) {
         <tbody>
           ${items.map(item => `
             <tr>
-              <td class="item">${item.name_tamil || item.name_english}</td>
+              <td class="item">${getItemPrintName(item, printLanguage)}</td>
               <td class="qty">${item.quantity}</td>
             </tr>
           `).join('')}
@@ -1622,7 +1803,7 @@ function generateCreditSummaryHTML(data) {
           ${bills.map(b => `
             <tr>
               <td>${b.bill_date.split('-').reverse().join('/')}</td>
-              <td class="text-right">${b.daily_total.toFixed(0)}</td>
+              <td class="text-right">${formatMoney(b.daily_total)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1630,7 +1811,7 @@ function generateCreditSummaryHTML(data) {
       
       <div class="total-section">
         <span class="total-label">TOTAL: </span>
-        <span class="total-amount">₹${total.toFixed(0)}</span>
+        <span class="total-amount">₹${formatMoney(total)}</span>
       </div>
       
       <div class="footer">

@@ -12,12 +12,13 @@
     "dev:vite": "vite",
     "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",
     "build": "vite build",
-    "build:win": "npm run build && electron-builder --win",
+    "build:win": "npm version patch --no-git-tag-version && npm run build && electron-builder --win",
     "preview": "vite preview"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.2.0",
     "better-sqlite3": "^11.8.1",
+    "exceljs": "^4.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
