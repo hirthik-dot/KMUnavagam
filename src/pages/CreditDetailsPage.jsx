@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import PageHeader from '../components/PageHeader';
 import Footer from '../components/Footer';
+import { formatToDisplayDate, getTodayLocaleDate } from '../utils/DateUtils';
 import Toast from '../components/Toast';
 import PaymentSuccessModal from '../components/PaymentSuccessModal';
 import './CreditDetailsPage.css';
@@ -19,19 +20,23 @@ function CreditDetailsPage({ onNavigate, customerId }) {
     const [lastPaymentAmount, setLastPaymentAmount] = useState(0);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [toast, setToast] = useState(null);
-    const getTodayLocalDate = () => {
-        const now = new Date();
-        return now.getFullYear() + '-' +
-            String(now.getMonth() + 1).padStart(2, '0') + '-' +
-            String(now.getDate()).padStart(2, '0');
-    };
-
-    const [paymentDate, setPaymentDate] = useState(getTodayLocalDate());
+    const [billToDelete, setBillToDelete] = useState(null);
+    const [paymentDate, setPaymentDate] = useState(getTodayLocaleDate());
 
     // For Bill Preview Modal
     const [selectedBill, setSelectedBill] = useState(null);
     const [billItems, setBillItems] = useState([]);
     const [isBillLoading, setIsBillLoading] = useState(false);
+
+    // For Summary Bill Range
+    const [showSummaryModal, setShowSummaryModal] = useState(false);
+    const [summaryStartDate, setSummaryStartDate] = useState(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 7);
+        return d.toISOString().split('T')[0];
+    });
+    const [summaryEndDate, setSummaryEndDate] = useState(getTodayLocaleDate());
+    const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
     useEffect(() => {
         if (customerId) {
@@ -67,6 +72,24 @@ function CreditDetailsPage({ onNavigate, customerId }) {
         }
     };
 
+    const handleDeleteBill = async () => {
+        if (!billToDelete) return;
+        try {
+            const success = await window.electronAPI.deleteBill(billToDelete.id);
+            if (success) {
+                setToast({ message: '✅ Bill Deleted Successfully', type: 'success' });
+                loadCustomerDetails();
+            } else {
+                setToast({ message: '❌ Bill not found or already deleted', type: 'error' });
+            }
+        } catch (error) {
+            console.error('Error deleting bill:', error);
+            setToast({ message: `❌ Failed to delete bill: ${error.message || 'Unknown error'}`, type: 'error' });
+        } finally {
+            setBillToDelete(null);
+        }
+    };
+
     const handleAddPayment = async (e) => {
         e.preventDefault();
         const amount = parseFloat(paymentAmount);
@@ -98,11 +121,45 @@ function CreditDetailsPage({ onNavigate, customerId }) {
         }
     };
 
+    const handlePrintSummary = async (e) => {
+        e.preventDefault();
+        setIsSummaryLoading(true);
+        try {
+            const billsInPeriod = await window.electronAPI.getBillsByDateRange(
+                customer.id, 
+                summaryStartDate, 
+                summaryEndDate
+            );
+
+            if (billsInPeriod.length === 0) {
+                setToast({ message: 'No bills found in the selected period', type: 'error' });
+                return;
+            }
+
+            const total = billsInPeriod.reduce((sum, b) => sum + b.daily_total, 0);
+            
+            await window.electronAPI.printCreditSummary({
+                customerName: customer.name,
+                startDate: formatToDisplayDate(summaryStartDate),
+                endDate: formatToDisplayDate(summaryEndDate),
+                bills: billsInPeriod,
+                total: total
+            });
+
+            setToast({ message: '✅ Summary bill sent to printer', type: 'success' });
+            setShowSummaryModal(false);
+        } catch (error) {
+            console.error('Error printing summary:', error);
+            setToast({ message: 'Failed to print summary bill', type: 'error' });
+        } finally {
+            setIsSummaryLoading(false);
+        }
+    };
+
     if (isLoading) return <div className="loading">Loading details...</div>;
     if (!customer) return (
         <div className="no-data">
             <p>Customer not found (ID: {JSON.stringify(customerId)})</p>
-            <button onClick={() => onNavigate('credits')}>Back to List</button>
         </div>
     );
 
@@ -116,8 +173,8 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                     <div className="name-and-phone">
                         <div className="name-with-actions">
                             <h1 className="customer-name">{customer.name}</h1>
-                            <button 
-                                className="delete-customer-btn" 
+                            <button
+                                className="delete-customer-btn"
                                 onClick={() => setShowDeleteConfirm(true)}
                                 title="Delete this customer"
                             >
@@ -158,6 +215,12 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                     >
                         <i className="fa-solid fa-check-double"></i> Full Settlement
                     </button>
+                    <button
+                        className="summary-btn"
+                        onClick={() => setShowSummaryModal(true)}
+                    >
+                        <i className="fa-solid fa-print"></i> Print Summary Bill
+                    </button>
                 </div>
 
                 {/* Transactions Layout */}
@@ -181,17 +244,18 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                     <tbody>
                                         {customer.bills.map((bill) => (
                                             <tr key={bill.id}>
-                                                <td>{(() => {
-                                                    const d = new Date(bill.date);
-                                                    const day = String(d.getDate()).padStart(2, '0');
-                                                    const month = String(d.getMonth() + 1).padStart(2, '0');
-                                                    const year = d.getFullYear();
-                                                    return `${day}/${month}/${year}`;
-                                                })()}</td>
+                                                <td>{formatToDisplayDate(bill.date)}</td>
                                                 <td>#{bill.id}</td>
                                                 <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
-                                                <td>
+                                                <td className="actions-cell">
                                                     <button className="view-btn" onClick={() => viewBillDetails(bill)}>View Bill</button>
+                                                    <button 
+                                                        className="delete-bill-btn-small" 
+                                                        onClick={() => setBillToDelete(bill)}
+                                                        title="Delete this bill"
+                                                    >
+                                                        <i className="fa-solid fa-trash-can"></i>
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -218,13 +282,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                     <tbody>
                                         {customer.payments.map((p) => (
                                             <tr key={p.id}>
-                                                <td>{(() => {
-                                                    const d = new Date(p.date);
-                                                    const day = String(d.getDate()).padStart(2, '0');
-                                                    const month = String(d.getMonth() + 1).padStart(2, '0');
-                                                    const year = d.getFullYear();
-                                                    return `${day}/${month}/${year}`;
-                                                })()}</td>
+                                                <td>{formatToDisplayDate(p.date)}</td>
                                                 <td className="paid-amount">₹{p.amount.toFixed(0)}</td>
                                             </tr>
                                         ))}
@@ -253,8 +311,8 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                                         placeholder="Enter amount paid"
                                         autoFocus
                                     />
-                                    <button 
-                                        type="button" 
+                                    <button
+                                        type="button"
                                         className="settle-shortcut-btn"
                                         onClick={() => setPaymentAmount(customer.balance.toString())}
                                     >
@@ -279,6 +337,46 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                 </div>
             )}
 
+            {/* Summary Print Range Modal */}
+            {showSummaryModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <h2>Print Summary Bill</h2>
+                        <p style={{ marginBottom: '15px', color: '#666', fontSize: '14px' }}>
+                            Choose a date range to list all total bill amounts per day for <strong>{customer.name}</strong>.
+                        </p>
+                        <form onSubmit={handlePrintSummary}>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>From Date</label>
+                                    <input
+                                        type="date"
+                                        value={summaryStartDate}
+                                        onChange={(e) => setSummaryStartDate(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>To Date</label>
+                                    <input
+                                        type="date"
+                                        value={summaryEndDate}
+                                        onChange={(e) => setSummaryEndDate(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                            </div>
+                            <div className="modal-actions">
+                                <button type="button" className="cancel-btn" onClick={() => setShowSummaryModal(false)}>Cancel</button>
+                                <button type="submit" className="save-btn" disabled={isSummaryLoading}>
+                                    <i className="fa-solid fa-print"></i> {isSummaryLoading ? 'Printing...' : 'Print Summary'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* Deletion Confirmation Modal */}
             {showDeleteConfirm && (
                 <div className="modal-overlay">
@@ -288,7 +386,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                         </div>
                         <h2>Delete Customer?</h2>
                         <p className="confirm-text">
-                            Are you sure you want to delete <strong>{customer.name}</strong>? 
+                            Are you sure you want to delete <strong>{customer.name}</strong>?
                             This will permanently remove all their credit and payment records.
                         </p>
                         <div className="modal-actions">
@@ -307,12 +405,11 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                             <div>
                                 <h2>Bill #{selectedBill.id} Details</h2>
                                 <p>{(() => {
-                                    const d = new Date(selectedBill.created_at);
-                                    const day = String(d.getDate()).padStart(2, '0');
-                                    const month = String(d.getMonth() + 1).padStart(2, '0');
-                                    const year = d.getFullYear();
-                                    const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-                                    return `${day}/${month}/${year} ${time}`;
+                                    if (!selectedBill.created_at) return '';
+                                    const [datePart, timePart] = selectedBill.created_at.split('T');
+                                    const displayDate = formatToDisplayDate(datePart);
+                                    const displayTime = timePart ? timePart.split('.')[0].substring(0, 5) : '';
+                                    return `${displayDate} ${displayTime}`;
                                 })()}</p>
                             </div>
                             <button className="close-btn" onClick={() => setSelectedBill(null)}>✕</button>
@@ -352,17 +449,37 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                     </div>
                 </div>
             )}
-            
+
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-            
+
             {showSuccessModal && (
-                <PaymentSuccessModal 
+                <PaymentSuccessModal
                     amount={lastPaymentAmount}
                     customerName={customer.name}
                     onClose={() => setShowSuccessModal(false)}
                 />
             )}
-            
+
+            {/* Bill Deletion Confirmation Modal */}
+            {billToDelete && (
+                <div className="modal-overlay danger">
+                    <div className="modal-content delete-confirm-modal">
+                        <div className="confirm-icon danger">
+                            <i className="fa-solid fa-triangle-exclamation"></i>
+                        </div>
+                        <h2>Delete Bill?</h2>
+                        <p className="confirm-text">
+                            Are you sure you want to delete <strong>Bill #{billToDelete.id}</strong> worth <strong>₹{billToDelete.total_amount.toFixed(0)}</strong>?
+                            This will permanently remove it from the history and update the customer's balance.
+                        </p>
+                        <div className="modal-actions">
+                            <button className="confirm-cancel-btn" onClick={() => setBillToDelete(null)}>No, Keep it</button>
+                            <button className="confirm-delete-btn" onClick={handleDeleteBill}>Yes, Delete Bill</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <Footer />
         </div>
     );

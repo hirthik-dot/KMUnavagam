@@ -76,12 +76,36 @@
     color: #475569;
     font-weight: 700;
     border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
 }
 
 .credits-table td {
     padding: 16px;
     border-bottom: 1px solid #f1f5f9;
     color: #1e293b;
+    vertical-align: middle;
+}
+
+.text-right {
+    text-align: right !important;
+}
+
+/* Specific Column Widths */
+.name-header,
+.name-cell {
+    min-width: 200px;
+    width: 25%;
+}
+
+.phone-header,
+.phone-cell {
+    min-width: 150px;
+    width: 20%;
+}
+
+.amount-header,
+.amount-cell {
+    width: 18.33%;
 }
 
 .clickable-row {
@@ -100,7 +124,6 @@
 
 .amount-cell {
     font-weight: 600;
-    text-align: right;
 }
 
 .paid {
@@ -113,6 +136,54 @@
 
 .pending {
     color: #ef4444;
+}
+
+/* Responsiveness */
+@media (max-width: 1024px) {
+    .credits-container {
+        padding: 20px;
+    }
+
+    .credits-title {
+        font-size: 28px;
+    }
+}
+
+@media (max-width: 768px) {
+    .credits-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .add-customer-btn {
+        width: 100%;
+    }
+
+    .credits-table {
+        font-size: 16px;
+    }
+
+    .credits-table th,
+    .credits-table td {
+        padding: 12px;
+    }
+}
+
+@media (max-width: 640px) {
+    .credits-page {
+        padding-top: 80px;
+    }
+
+    .credits-container {
+        padding: 15px;
+    }
+
+    /* Force the table to scroll horizontally on very small screens */
+    .table-container {
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+    }
 }
 
 /* Modal Styling */
@@ -197,7 +268,8 @@
     transition: all 0.2s;
 }
 
-.cancel-btn:hover, .save-btn:hover {
+.cancel-btn:hover,
+.save-btn:hover {
     filter: brightness(0.9);
     transform: translateY(-2px);
 }

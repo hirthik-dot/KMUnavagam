@@ -5,6 +5,7 @@ import SearchBar from '../components/SearchBar';
 import PageHeader from '../components/PageHeader';
 import Toast from '../components/Toast';
 import SupplierModal from '../components/SupplierModal';
+import { getTodayLocaleDate } from '../utils/DateUtils';
 import './BillingPage.css';
 
 function BillingPage({ onNavigate, creditCustomer }) {
@@ -21,6 +22,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
     const [suppliers, setSuppliers] = useState([]);
     const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [toast, setToast] = useState(null);
+    const [billDate, setBillDate] = useState(getTodayLocaleDate());
 
     // Load food items and categories when component mounts
     useEffect(() => {
@@ -35,6 +37,9 @@ function BillingPage({ onNavigate, creditCustomer }) {
             setCart(creditCustomer.cart);
             setEditMode(true);
             setOriginalBillId(creditCustomer.originalBillId);
+            if (creditCustomer.billDate) {
+                setBillDate(creditCustomer.billDate);
+            }
         }
     }, [creditCustomer]);
 
@@ -44,7 +49,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
 
         // Filter by category
         if (selectedCategory !== 'All') {
-            filtered = filtered.filter(item => 
+            filtered = filtered.filter(item =>
                 item.category === selectedCategory
             );
         }
@@ -159,7 +164,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
                 item.id === itemId ? { ...item, price: newPrice } : item
             )
         );
-        
+
         // Also update cart if item is already in cart
         setCart((prevCart) =>
             prevCart.map((item) =>
@@ -197,10 +202,16 @@ function BillingPage({ onNavigate, creditCustomer }) {
      */
     const confirmPrintWithSupplier = (supplier) => {
         setShowSupplierModal(false);
-        
         const total = calculateTotal();
+
+        // Format dateTime string from selected billDate
+        const [year, month, day] = billDate.split('-');
+        const selectedDate = new Date(year, month - 1, day);
         const now = new Date();
-        const dateTime = now.toLocaleString('en-IN', {
+        // Combine selected date with current time
+        selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+        
+        const dateTime = selectedDate.toLocaleString('en-IN', {
             day: '2-digit',
             month: '2-digit',
             year: 'numeric',
@@ -217,6 +228,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
             items: cart,
             total: total,
             dateTime: dateTime,
+            billDate: billDate, // YYYY-MM-DD
             customerName: customerName,
             creditCustomerId: customerId,
             supplierId: supplier?.id || null,
@@ -240,16 +252,16 @@ function BillingPage({ onNavigate, creditCustomer }) {
     }
 
     const isBannerActive = editMode || creditCustomer;
-    
+
     return (
         <div className={`billing-page ${isBannerActive ? 'with-banner' : ''}`}>
-            <PageHeader 
-                onNavigate={onNavigate} 
-                backTo={editMode ? 'records' : (creditCustomer ? 'credits' : 'home')} 
+            <PageHeader
+                onNavigate={onNavigate}
+                backTo={editMode ? 'records' : (creditCustomer ? 'credits' : 'home')}
             />
 
             {showSupplierModal && (
-                <SupplierModal 
+                <SupplierModal
                     suppliers={suppliers}
                     onSelect={confirmPrintWithSupplier}
                     onCancel={() => setShowSupplierModal(false)}
@@ -260,6 +272,14 @@ function BillingPage({ onNavigate, creditCustomer }) {
             {editMode && (
                 <div className="edit-mode-banner">
                     <p><i className="fa-solid fa-pen-to-square"></i> Editing Bill #{originalBillId} - Make changes and print to update</p>
+                    <div className="banner-date-picker">
+                        <label>Bill Date:</label>
+                        <input 
+                            type="date" 
+                            value={billDate} 
+                            onChange={(e) => setBillDate(e.target.value)}
+                        />
+                    </div>
                 </div>
             )}
 
@@ -267,6 +287,14 @@ function BillingPage({ onNavigate, creditCustomer }) {
             {creditCustomer && !editMode && (
                 <div className="credit-banner">
                     <p><i className="fa-solid fa-file-pen"></i> Billing for Credit Customer: <strong>{creditCustomer.customerName}</strong></p>
+                    <div className="banner-date-picker">
+                        <label>Bill Date:</label>
+                        <input 
+                            type="date" 
+                            value={billDate} 
+                            onChange={(e) => setBillDate(e.target.value)}
+                        />
+                    </div>
                 </div>
             )}
 
@@ -338,7 +366,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
                     />
                 </div>
             </div>
-            
+
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         </div>
     );

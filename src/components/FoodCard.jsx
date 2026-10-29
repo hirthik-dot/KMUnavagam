@@ -12,7 +12,7 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
      */
     function handleClick() {
         if (isEditingPrice) return; // Don't add to cart when editing price
-        
+
         // If already in cart, don't do anything on card click except if we want it to increment
         // But the user requested specific buttons, so we should probably keep card click simple
         onAddToCart(item);
@@ -62,7 +62,7 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
      */
     function savePriceChange() {
         const finalPrice = tempPrice === '' || tempPrice === '0' ? item.price : parseFloat(tempPrice);
-        
+
         if (!isNaN(finalPrice) && finalPrice > 0 && onPriceChange) {
             onPriceChange(item.id, finalPrice);
         }
@@ -74,7 +74,7 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
      */
     function handlePriceKeyDown(e) {
         e.stopPropagation();
-        
+
         if (e.key === 'Enter') {
             e.preventDefault();
             savePriceChange();
@@ -94,7 +94,7 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
             <div className="food-image">
                 {item.image_path ? (
                     <img
-                        src={`/food-images/${item.image_path}`}
+                        src={`media://${item.image_path}`}
                         alt={item.name_english}
                         onError={(e) => {
                             e.target.style.display = 'none';
@@ -131,8 +131,8 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
                         min="0"
                     />
                 ) : (
-                    <p 
-                        className="food-price editable" 
+                    <p
+                        className="food-price editable"
                         onClick={(e) => e.stopPropagation()}
                         onDoubleClick={handlePriceDoubleClick}
                         title="Double-click to edit price"
@@ -144,15 +144,15 @@ function FoodCard({ item, onAddToCart, isInCart, onPriceChange, quantity, onUpda
                 {/* Quantity Controls - Only when in cart */}
                 {isInCart && (
                     <div className="card-quantity-controls">
-                        <button 
-                            className="card-qty-btn decrease" 
+                        <button
+                            className="card-qty-btn decrease"
                             onClick={handleDecrement}
                         >
                             -
                         </button>
                         <span className="card-qty-value">{quantity}</span>
-                        <button 
-                            className="card-qty-btn increase" 
+                        <button
+                            className="card-qty-btn increase"
                             onClick={handleIncrement}
                         >
                             +

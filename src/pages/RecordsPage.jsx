@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import PageHeader from '../components/PageHeader';
 import Footer from '../components/Footer';
 import Toast from '../components/Toast';
+import { getTodayLocaleDate } from '../utils/DateUtils';
 import './RecordsPage.css';
 
 /**
@@ -28,6 +29,7 @@ function RecordsPage({ onNavigate }) {
     const [supplierSales, setSupplierSales] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
     const [supplierFilter, setSupplierFilter] = useState('');
+    const [billToDelete, setBillToDelete] = useState(null);
 
     // Load suppliers on mount
     useEffect(() => {
@@ -105,8 +107,26 @@ function RecordsPage({ onNavigate }) {
         setIsLoading(true);
         try {
             const { startDate, endDate } = getDateRange();
-            const data = await window.electronAPI.getDailyRecords(startDate, endDate, supplierFilter);
+            // Daily records should always show total, ignore supplier filter
+            const data = await window.electronAPI.getDailyRecords(startDate, endDate, '');
             setRecords(data);
+
+            // AUTO-LOAD TODAY DETAILS: If filtering for today, only auto-fetch if there's actually data for today's date
+            const todayResult = data.find(r => r.date === startDate);
+            
+            if (filter === 'today' && todayResult) {
+                const [bills, expenses] = await Promise.all([
+                    window.electronAPI.getBillsByDate(todayResult.date),
+                    window.electronAPI.getExpensesByDate(todayResult.date)
+                ]);
+                setDayDetails({ bills, expenses, isTodayView: true });
+            } else if (filter === 'today') {
+                // If it's today but no records for today exist yet, clear details
+                setDayDetails({ bills: [], expenses: [], isTodayView: true });
+            } else {
+                // Clear dayDetails if we switch away from today and no modal is open
+                if (!selectedDate) setDayDetails(null);
+            }
         } catch (error) {
             console.error('Error loading records:', error);
         } finally {
@@ -184,7 +204,7 @@ function RecordsPage({ onNavigate }) {
         try {
             // Load bill items
             const items = await window.electronAPI.getBillItems(bill.id);
-            
+
             // Transform items to cart format (ensure item_id is preserved)
             const cartItems = items.map(item => ({
                 id: item.item_id || item.id,
@@ -205,8 +225,11 @@ function RecordsPage({ onNavigate }) {
                     creditCustomerId: bill.credit_customer_id,
                     customerName: bill.customer_name
                 } : null,
+                // Top-level customerName so PrintPreviewPage renders it correctly
+                customerName: bill.bill_type === 'CREDIT' ? bill.customer_name : null,
                 supplierId: bill.supplier_id,
-                supplierName: bill.supplier_name
+                supplierName: bill.supplier_name,
+                billDate: bill.created_at ? bill.created_at.split('T')[0] : getTodayLocaleDate()
             };
 
             // Navigate to billing page with pre-filled cart
@@ -217,10 +240,35 @@ function RecordsPage({ onNavigate }) {
         }
     };
 
+    // Handle Bill Deletion
+    const handleDeleteBill = async () => {
+        if (!billToDelete) return;
+
+        try {
+            const success = await window.electronAPI.deleteBill(billToDelete.id);
+            if (success) {
+                setToast({ message: '✅ Bill Deleted Successfully', type: 'success' });
+                // Refresh data
+                loadRecords();
+                if (selectedDate) loadDayDetails(selectedDate);
+            } else {
+                setToast({ message: '❌ Bill not found or already deleted', type: 'error' });
+            }
+        } catch (error) {
+            console.error('Error deleting bill:', error);
+            setToast({ message: `❌ Failed to delete bill: ${error.message || 'Unknown error'}`, type: 'error' });
+        } finally {
+            setBillToDelete(null);
+        }
+    };
+
     // Close day details
     const closeDayDetails = () => {
         setSelectedDate(null);
-        setDayDetails(null);
+        // Only clear if not in the fixed Today view
+        if (filter !== 'today') {
+            setDayDetails(null);
+        }
         setSelectedBill(null);
     };
 
@@ -255,7 +303,10 @@ function RecordsPage({ onNavigate }) {
                 <div className="records-header">
                     <h1 className="records-title"><i className="fa-solid fa-chart-line"></i> Sales Records</h1>
                     <div className="tab-buttons">
-                        <button className={`tab-btn ${tab === 'daily' ? 'active' : ''}`} onClick={() => setTab('daily')}>
+                        <button className={`tab-btn ${tab === 'daily' ? 'active' : ''}`} onClick={() => {
+                            setTab('daily');
+                            setSupplierFilter('');
+                        }}>
                             <i className="fas fa-calendar-day"></i> Daily Records
                         </button>
                         <button className={`tab-btn ${tab === 'supplier' ? 'active' : ''}`} onClick={() => setTab('supplier')}>
@@ -276,19 +327,21 @@ function RecordsPage({ onNavigate }) {
                         <button className={`filter-btn ${filter === 'custom' ? 'active' : ''}`} onClick={() => setFilter('custom')}>Custom Range</button>
                     </div>
 
-                    <div className="supplier-filter">
-                        <label>Filter by Supplier:</label>
-                        <select 
-                            value={supplierFilter} 
-                            onChange={(e) => setSupplierFilter(e.target.value)}
-                            className="supplier-select"
-                        >
-                            <option value="">All Suppliers</option>
-                            {suppliers.map(s => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
-                            ))}
-                        </select>
-                    </div>
+                    {tab === 'supplier' && (
+                        <div className="supplier-filter">
+                            <label>Filter by Supplier:</label>
+                            <select
+                                value={supplierFilter}
+                                onChange={(e) => setSupplierFilter(e.target.value)}
+                                className="supplier-select"
+                            >
+                                <option value="">All Suppliers</option>
+                                {suppliers.map(s => (
+                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                 </div>
 
                 {/* Custom Date Range */}
@@ -303,6 +356,10 @@ function RecordsPage({ onNavigate }) {
                 {/* Summary Cards */}
                 {tab === 'daily' && (
                     <div className="summary-cards">
+                        <div className="summary-card total">
+                            <div className="card-label">Total Sales</div>
+                            <div className="card-value">₹{totals.totalSales.toFixed(0)}</div>
+                        </div>
                         <div className="summary-card sales">
                             <div className="card-label">Cash Sales</div>
                             <div className="card-value">₹{totals.totalCashSales.toFixed(0)}</div>
@@ -355,6 +412,98 @@ function RecordsPage({ onNavigate }) {
                     </div>
                 ) : records.length === 0 ? (
                     <div className="no-records">No records found for selected period</div>
+                ) : filter === 'today' && dayDetails?.isTodayView ? (
+                    /* INLINE TODAY VIEW: Direct bills and expenses */
+                    <div className="today-details-inline">
+                        <div className="two-column-layout">
+                            {/* Left Column - Bills */}
+                            <div className="details-section">
+                                <h3 className="section-title"><i className="fa-solid fa-file-invoice"></i> Recent Bills ({dayDetails.bills.length})</h3>
+                                {dayDetails.bills.length === 0 ? (
+                                    <p className="no-data">No bills for today yet.</p>
+                                ) : (
+                                    <div className="records-table-container">
+                                        <table className="details-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Bill #</th>
+                                                    <th>Time</th>
+                                                    <th>Type</th>
+                                                    <th>Amount</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {dayDetails.bills.map((bill) => (
+                                                    <tr key={bill.id} className={bill.bill_type === 'CREDIT' ? 'credit-row' : ''}>
+                                                        <td>#{bill.id}</td>
+                                                        <td>{bill.time}</td>
+                                                        <td className="type-cell">
+                                                            <span className={`type-badge ${bill.bill_type.toLowerCase()}`}>
+                                                                {bill.bill_type}
+                                                            </span>
+                                                        </td>
+                                                        <td className="bold">₹{bill.total_amount.toFixed(0)}</td>
+                                                        <td>
+                                                            <div className="action-buttons">
+                                                                <button
+                                                                    className="view-btn-small"
+                                                                    onClick={() => viewBillDetails(bill)}
+                                                                >
+                                                                    View
+                                                                </button>
+                                                                <button
+                                                                    className="edit-reprint-btn"
+                                                                    onClick={() => handleEditAndReprint(bill)}
+                                                                    title="Edit and reprint this bill"
+                                                                >
+                                                                    Edit & Reprint
+                                                                </button>
+                                                                <button
+                                                                    className="delete-btn-small"
+                                                                    onClick={() => setBillToDelete(bill)}
+                                                                    title="Delete this bill"
+                                                                >
+                                                                    <i className="fa-solid fa-trash"></i>
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Right Column - Expenses */}
+                            <div className="details-section">
+                                <h3 className="section-title"><i className="fa-solid fa-wallet"></i> Today's Expenses ({dayDetails.expenses.length})</h3>
+                                {dayDetails.expenses.length === 0 ? (
+                                    <p className="no-data">No expenses for today yet.</p>
+                                ) : (
+                                    <div className="records-table-container">
+                                        <table className="details-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Description</th>
+                                                    <th>Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {dayDetails.expenses.map((expense) => (
+                                                    <tr key={expense.id}>
+                                                        <td>{expense.description}</td>
+                                                        <td className="expenses-cell">₹{expense.amount.toFixed(0)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
                 ) : (
                     <div className="records-table-container">
                         <table className="records-table">
@@ -447,6 +596,13 @@ function RecordsPage({ onNavigate }) {
                                                                 >
                                                                     Edit & Reprint
                                                                 </button>
+                                                                <button
+                                                                    className="delete-btn-small"
+                                                                    onClick={() => setBillToDelete(bill)}
+                                                                    title="Delete this bill"
+                                                                >
+                                                                    <i className="fa-solid fa-trash"></i>
+                                                                </button>
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -507,12 +663,38 @@ function RecordsPage({ onNavigate }) {
                 <div className="modal-overlay nested" onClick={() => setSelectedBill(null)}>
                     <div className="bill-modal" onClick={e => e.stopPropagation()}>
                         <div className="bill-header">
-                            <div>
-                                <h2>Bill #{selectedBill.id} Details</h2>
-                                <p>{selectedBill.customer_name ? `Customer: ${selectedBill.customer_name}` : 'Cash Sale'}</p>
+                            <div className="bill-header-main">
+                                <h2>Bill #{selectedBill.id}</h2>
+                                <div className="bill-badges">
+                                    <span className={`type-badge ${selectedBill.bill_type?.toLowerCase() || 'cash'}`}>
+                                        {selectedBill.bill_type || 'CASH'}
+                                    </span>
+                                </div>
                             </div>
                             <button className="close-btn" onClick={() => setSelectedBill(null)}>✕</button>
                         </div>
+                        
+                        <div className="bill-metadata">
+                            <div className="meta-row">
+                                <span className="meta-label">Date:</span>
+                                <span className="meta-value">{selectedBill.created_at ? formatDisplayDate(selectedBill.created_at.split('T')[0]) : '-'}</span>
+                            </div>
+                            <div className="meta-row">
+                                <span className="meta-label">Time:</span>
+                                <span className="meta-value">{selectedBill.time || '-'}</span>
+                            </div>
+                            {selectedBill.bill_type === 'CREDIT' && (
+                                <div className="meta-row">
+                                    <span className="meta-label">Customer:</span>
+                                    <span className="meta-value bold">{selectedBill.customer_name}</span>
+                                </div>
+                            )}
+                            <div className="meta-row">
+                                <span className="meta-label">Supplier:</span>
+                                <span className="meta-value">{selectedBill.supplier_name || 'Counter'}</span>
+                            </div>
+                        </div>
+
                         <div className="bill-body">
                             {isBillLoading ? (
                                 <p>Loading items...</p>
@@ -548,9 +730,28 @@ function RecordsPage({ onNavigate }) {
                     </div>
                 </div>
             )}
-            
+            {/* Bill Delete Confirmation Modal */}
+            {billToDelete && (
+                <div className="modal-overlay danger">
+                    <div className="modal-content small danger">
+                        <div className="modal-header">
+                            <h2>Delete Bill?</h2>
+                            <button className="close-btn" onClick={() => setBillToDelete(null)}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            <p>Are you sure you want to delete <strong>Bill #{billToDelete.id}</strong> (₹{billToDelete.total_amount.toFixed(0)})?</p>
+                            <p className="danger-text">This action cannot be undone and will remove the record from all history and account balances.</p>
+                        </div>
+                        <div className="modal-actions">
+                            <button className="cancel-btn" onClick={() => setBillToDelete(null)}>CANCEL</button>
+                            <button className="confirm-delete-btn" onClick={handleDeleteBill}>DELETE PERMANENTLY</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-            
+
             <Footer />
         </div>
     );

@@ -1,19 +1,54 @@
 // main.js - Main Electron Process
 // This is the entry point for the Electron application
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 
 // Force dd/mm/yyyy date format by setting locale
 app.commandLine.appendSwitch('lang', 'en-GB');
 app.commandLine.appendSwitch('accept-languages', 'en-GB,en,en-IN');
 
-// Import database functions
+const logger = require('./logger');
+const dbSafety = require('./dbSafety');
+
+// DETERMINISTIC DATABASE PATHS (Required for pre-load recovery)
+const dbPath = process.env.NODE_ENV === 'development'
+  ? path.join(__dirname, '..', 'database', 'hotel.db')
+  : path.join(app.getPath('userData'), 'database', 'hotel.db');
+
+const backupDir = process.env.NODE_ENV === 'development'
+  ? path.join(__dirname, '..', 'backups')
+  : path.join(app.getPath('userData'), 'backups');
+
+// 🛡️ CRITICAL RECOVERY PHASE: Runs BEFORE database module is required
+// This prevents EBUSY errors because SQLite hasn't opened the file yet.
+try {
+  dbSafety.restoreLatestBackupIfCorrupted(dbPath, backupDir);
+} catch (err) {
+  logger.log(`🔥 FATAL: Pre-startup recovery failed: ${err.message}`, 'ERROR');
+}
+
+// Now safe to import database module
 const db = require('./database');
+
+// GLOBAL CRASH LOGGING
+process.on('uncaughtException', (error) => {
+  logger.log('🔥 CRITICAL: Uncaught Exception', 'ERROR');
+  logger.log(error.stack || error, 'ERROR');
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.log('🔥 CRITICAL: Unhandled Rejection', 'ERROR');
+  logger.log(reason instanceof Error ? reason.stack : reason, 'ERROR');
+});
 
 // Store reference to the main window
 let mainWindow;
+
+// Cached default printer name — resolved once at startup to avoid per-print getPrintersAsync() delays
+let cachedPrinterName = '';
 
 // Determine if we're in development or production mode
 const isDev = process.env.NODE_ENV === 'development';
@@ -38,7 +73,7 @@ function createWindow() {
     },
     // Window styling
     backgroundColor: '#ffffff',
-    title: 'KM Unavagam',
+    title: 'Zerivo',
     // Remove the menu bar (File, Edit, View, etc.)
     autoHideMenuBar: true,
   });
@@ -64,8 +99,8 @@ function createWindow() {
 /**
  * Initialize the app when Electron is ready
  */
-app.whenReady().then(() => {
-  console.log('🚀 Starting Hotel Billing Application...');
+app.whenReady().then(async () => {
+  logger.log('🚀 Starting Hotel Billing Application...', 'INFO');
 
   // Aggressively force British/Indian English for dd/mm/yyyy date format
   console.log('🌍 Setting application locale to en-GB');
@@ -76,7 +111,7 @@ app.whenReady().then(() => {
   }
 
   // Initialize the database
-  db.initializeDatabase();
+  await db.initializeDatabase();
 
   // Set up IPC handlers (communication between React and Electron)
   setupIPCHandlers();
@@ -84,12 +119,72 @@ app.whenReady().then(() => {
   // Create the window
   createWindow();
 
+  // Cache the default printer name once the main window is ready
+  mainWindow.webContents.once('did-finish-load', async () => {
+    try {
+      const printers = await mainWindow.webContents.getPrintersAsync();
+      const defaultPrinter = printers.find(p => p.isDefault) || (printers.length > 0 ? printers[0] : null);
+      cachedPrinterName = defaultPrinter ? defaultPrinter.name : '';
+      console.log(`🖨️ Cached default printer: ${cachedPrinterName || 'System Default'}`);
+    } catch (err) {
+      console.warn('⚠️ Could not cache printer name:', err.message);
+    }
+  });
+
+  // Register a custom protocol for local media files
+  // This allows the renderer to access images from the user data folder securely
+  protocol.handle('media', (request) => {
+    try {
+      const url = new URL(request.url);
+      // Get the filename from the host (media://filename.jpg) or pathname (media:///filename.jpg)
+      let fileName = url.host || path.basename(url.pathname);
+
+      // DECODE URL components (handle spaces like %20)
+      fileName = decodeURIComponent(fileName);
+
+      // Clean up the filename
+      fileName = fileName.replace(/^\/+|\/+$/g, '');
+
+      const imagesDir = isDev
+        ? path.join(__dirname, '..', 'public', 'food-images')
+        : path.join(app.getPath('userData'), 'food-images');
+
+      const filePath = path.join(imagesDir, fileName);
+
+      console.log(`[MEDIA] Request: ${request.url} -> File: ${filePath}`);
+
+      if (!fs.existsSync(filePath)) {
+        console.warn(`[MEDIA] File not found: ${filePath}`);
+        return new Response('Not Found', { status: 404 });
+      }
+
+      // Convert to file URL properly for Windows (forward slashes and encoded spaces)
+      // Standard pathToFileURL(path).href handles all encoding automatically
+      const fileUrl = pathToFileURL(filePath).href;
+
+      return net.fetch(fileUrl);
+    } catch (error) {
+      console.error(`[MEDIA] Protocol error: ${error.message}`);
+      return new Response('Error', { status: 500 });
+    }
+  });
+
   // On macOS, re-create window when dock icon is clicked
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
+
+  // FEATURE 2A: ROLLING RECENT BACKUP (3-hour interval)
+  setInterval(async () => {
+    try {
+      logger.log('[BACKUP] Triggering scheduled backup...', 'INFO');
+      await db.updateLatestBackup();
+    } catch (error) {
+      logger.log(`[BACKUP] Scheduled backup failed: ${error.message}`, 'ERROR');
+    }
+  }, 1 * 60 * 60 * 1000); // 1 hour
 });
 
 /**
@@ -102,10 +197,46 @@ app.on('window-all-closed', () => {
 });
 
 /**
+ * FEATURE 2: GRACEFUL SHUTDOWN BACKUPS
+ * Runs before the app closes.
+ *
+ * CRITICAL FIX: Electron does NOT await async before-quit callbacks.
+ * We use e.preventDefault() + IIFE + app.exit(0) in finally block
+ * to guarantee backups complete before the process terminates.
+ */
+let shuttingDown = false;
+app.on('before-quit', (e) => {
+  if (shuttingDown) return; // Guard against re-entrant calls
+
+  e.preventDefault();
+  shuttingDown = true;
+
+  logger.log('🚪 Shutting down: Performing safety backups...', 'INFO');
+
+  (async () => {
+    try {
+      await Promise.all([
+        db.updateLatestBackup(),
+        db.createDailySnapshot()
+      ]);
+      db.cleanupOldDailyBackups();
+      logger.log('✅ Shutdown backups complete. Goodbye!', 'INFO');
+    } catch (error) {
+      logger.log(`❌ Shutdown backup failed: ${error.message}`, 'ERROR');
+    } finally {
+      app.exit(0); // Always exit, even if backup fails
+    }
+  })();
+});
+
+/**
  * Set up IPC handlers for communication between React and Electron
  * These handle requests from the React frontend
  */
+let handlersRegistered = false;
 function setupIPCHandlers() {
+  if (handlersRegistered) return;
+  handlersRegistered = true;
   // ========== DATABASE OPERATIONS ==========
 
   // Get all active items
@@ -172,21 +303,41 @@ function setupIPCHandlers() {
   });
 
   // Save bill
-  ipcMain.handle('db:saveBill', async (event, items, totalAmount, customerId, supplierId) => {
+  ipcMain.handle('db:saveBill', async (event, items, totalAmount, customerId, supplierId, customDate) => {
     try {
-      return db.saveBill(items, totalAmount, customerId, supplierId);
+      return db.saveBill(items, totalAmount, customerId, supplierId, customDate);
     } catch (error) {
       console.error('Error saving bill:', error);
       throw error;
     }
   });
 
-  // Update existing bill
-  ipcMain.handle('db:updateBill', async (event, billId, items, totalAmount, supplierId) => {
+  // Get next bill ID (for preview)
+  ipcMain.handle('db:getNextBillId', async () => {
     try {
-      return db.updateBill(billId, items, totalAmount, supplierId);
+      return db.getNextBillId();
+    } catch (error) {
+      console.error('Error getting next bill ID:', error);
+      return 1;
+    }
+  });
+
+  // Update existing bill
+  ipcMain.handle('db:updateBill', async (event, billId, items, totalAmount, supplierId, customDate) => {
+    try {
+      return db.updateBill(billId, items, totalAmount, supplierId, customDate);
     } catch (error) {
       console.error('Error updating bill:', error);
+      throw error;
+    }
+  });
+
+  // Delete bill
+  ipcMain.handle('db:deleteBill', async (event, billId) => {
+    try {
+      return db.deleteBill(billId);
+    } catch (error) {
+      console.error('Error deleting bill:', error);
       throw error;
     }
   });
@@ -224,9 +375,9 @@ function setupIPCHandlers() {
   });
 
   // Update expense
-  ipcMain.handle('db:updateExpense', async (event, expenseId, description, amount) => {
+  ipcMain.handle('db:updateExpense', async (event, expenseId, description, amount, expenseDate) => {
     try {
-      return db.updateExpense(expenseId, description, amount);
+      return db.updateExpense(expenseId, description, amount, expenseDate);
     } catch (error) {
       console.error('Error updating expense:', error);
       throw error;
@@ -357,6 +508,83 @@ function setupIPCHandlers() {
     }
   });
 
+  ipcMain.handle('db:getBillsByDateRange', async (event, customerId, startDate, endDate) => {
+    try {
+      return db.getBillsByDateRange(customerId, startDate, endDate);
+    } catch (error) {
+      console.error('Error getting bills by date range:', error);
+      throw error;
+    }
+  });
+
+  // ========== VENDOR OPERATIONS ==========
+
+  ipcMain.handle('db:getAllVendors', async () => {
+    try {
+      return db.getAllVendors();
+    } catch (error) {
+      console.error('Error getting vendors:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:addVendor', async (event, name, phone) => {
+    try {
+      return db.addVendor(name, phone);
+    } catch (error) {
+      console.error('Error adding vendor:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:addVendorTransaction', async (event, vendorId, amount, type, description, date) => {
+    try {
+      return db.addVendorTransaction(vendorId, amount, type, description, date);
+    } catch (error) {
+      console.error('Error adding vendor transaction:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:getVendorDetails', async (event, vendorId) => {
+    try {
+      return db.getVendorDetails(vendorId);
+    } catch (error) {
+      console.error('Error getting vendor details:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:deleteVendor', async (event, id) => {
+    try {
+      return db.deleteVendor(id);
+    } catch (error) {
+      console.error('Error deleting vendor:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:updateVendorTransaction', async (event, id, amount, description, date) => {
+    try {
+      return db.updateVendorTransaction(id, amount, description, date);
+    } catch (error) {
+      console.error('Error updating vendor transaction:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:deleteVendorTransaction', async (event, transactionId) => {
+    try {
+      return db.deleteVendorTransaction(transactionId);
+    } catch (error) {
+      console.error('Error deleting vendor transaction:', error);
+      throw error;
+    }
+  });
+
+
+
+
   // ========== CATEGORY OPERATIONS ==========
 
   // Get all categories
@@ -421,23 +649,96 @@ function setupIPCHandlers() {
     }
   });
 
-  // Add a new supplier
-  ipcMain.handle('db:addSupplier', async (event, name) => {
+  // Add a new supplier (staff)
+  ipcMain.handle('db:addSupplier', async (event, name, dailyWage) => {
     try {
-      return db.addSupplier(name);
+      return db.addSupplier(name, dailyWage);
     } catch (error) {
       console.error('Error adding supplier:', error);
       throw error;
     }
   });
 
-  // Update supplier
-  ipcMain.handle('db:updateSupplier', async (event, id, name, isActive) => {
+  // Update supplier (staff)
+  ipcMain.handle('db:updateSupplier', async (event, id, name, dailyWage, isActive) => {
     try {
-      db.updateSupplier(id, name, isActive);
-      return { success: true };
+      return db.updateSupplier(id, name, dailyWage, isActive);
     } catch (error) {
       console.error('Error updating supplier:', error);
+      throw error;
+    }
+  });
+
+  // ========== STAFF MAINTENANCE (Stand-alone Employee Logic) ==========
+
+  ipcMain.handle('db:getStaffList', async (event, showInactive) => {
+    try {
+      return db.getEmployeeList(Boolean(showInactive));
+    } catch (error) {
+      console.error('Error getting staff list:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:getStaffDetails', async (event, staffId) => {
+    try {
+      return db.getEmployeeDetails(staffId);
+    } catch (error) {
+      console.error('Error getting staff details:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:addEmployee', async (event, name, dailyWage) => {
+    try {
+      return db.addEmployee(name, dailyWage);
+    } catch (error) {
+      console.error('Error adding employee:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:updateEmployee', async (event, id, name, dailyWage, isActive) => {
+    try {
+      return db.updateEmployee(id, name, dailyWage, isActive);
+    } catch (error) {
+      console.error('Error updating employee:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:deleteEmployee', async (event, id) => {
+    try {
+      return db.deleteEmployee(id);
+    } catch (error) {
+      console.error('Error deleting employee:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:addStaffTransaction', async (event, staffId, amount, type, description, date) => {
+    try {
+      return db.addEmployeeTransaction(staffId, amount, type, description, date);
+    } catch (error) {
+      console.error('Error adding staff transaction:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:updateStaffTransaction', async (event, id, amount, description, date) => {
+    try {
+      return db.updateEmployeeTransaction(id, amount, description, date);
+    } catch (error) {
+      console.error('Error updating staff transaction:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:deleteStaffTransaction', async (event, transactionId) => {
+    try {
+      return db.deleteEmployeeTransaction(transactionId);
+    } catch (error) {
+      console.error('Error deleting staff transaction:', error);
       throw error;
     }
   });
@@ -484,6 +785,7 @@ function setupIPCHandlers() {
     console.log(`🖨️ Silent Printing Type: ${type}`);
 
     return new Promise((resolve, reject) => {
+      let settled = false;
       // Create a hidden window with enough size to render content
       const silentWin = new BrowserWindow({
         show: false,
@@ -495,47 +797,60 @@ function setupIPCHandlers() {
         }
       });
 
+      // FIX M1: Global timeout to prevent hanging if page never finishes loading
+      const printTimeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          console.error('❌ Print timeout: window did not finish loading within 15 seconds');
+          if (silentWin && !silentWin.isDestroyed()) silentWin.destroy();
+          reject(new Error('Print timed out after 15 seconds'));
+        }
+      }, 15000);
+
       const html = type === 'KOT' ? generateKOTHTML(billData) : generateBillHTML(billData);
 
       // Load content
       silentWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 
-      silentWin.webContents.on('did-finish-load', () => {
-        // Wait longer to ensure rendering is complete on slower systems
-        setTimeout(async () => {
-          try {
-            // Get all printers to find the default one
-            const printers = await silentWin.webContents.getPrintersAsync();
-            const defaultPrinter = printers.find(p => p.isDefault) || (printers.length > 0 ? printers[0] : null);
+      silentWin.webContents.on('did-finish-load', async () => {
+        if (settled) return; // Already timed out
+        try {
+          // Minimal wait for layout — thermal bill HTML is simple, 100ms is sufficient
+          await new Promise(res => setTimeout(res, 100));
 
-            console.log(`🖨️ Target Printer: ${defaultPrinter ? defaultPrinter.name : 'System Default'}`);
+          if (settled) return; // Check again after wait
 
-            const printOptions = {
-              silent: true,
-              printBackground: true,
-              deviceName: defaultPrinter ? defaultPrinter.name : '',
-              color: false,
-              margins: {
-                marginType: 'none'
-              },
-              landscape: false,
-              scaleFactor: 100,
-              // Explicit page size for 80mm thermal printer (in microns)
-              // 80mm = 80000 microns width
-              // Height set to A4 as fallback, thermal printer will auto-cut
-              pageSize: {
-                width: 80000,  // 80mm in microns
-                height: 297000 // A4 height, printer will auto-cut to actual length
-              }
-            };
+          // Use cached printer to avoid slow getPrintersAsync() on every print
+          console.log(`🖨️ Target Printer: ${cachedPrinterName || 'System Default'}`);
 
-            silentWin.webContents.print(printOptions, (success, errorType) => {
-              // Cleanup the print window
+          const printOptions = {
+            silent: true,
+            printBackground: true,
+            deviceName: cachedPrinterName,
+            color: false,
+            margins: {
+              marginType: 'none'
+            },
+            landscape: false,
+            scaleFactor: 100,
+            // Explicit page size for 80mm thermal printer (in microns)
+            pageSize: {
+              width: 80000,  // 80mm in microns
+              height: 297000 // A4 height, printer will auto-cut to actual length
+            }
+          };
+
+          silentWin.webContents.print(printOptions, (success, errorType) => {
+            clearTimeout(printTimeout);
+            settled = true;
+
+            // Wait 800ms for the spooler to receive the job before destroying the window
+            setTimeout(() => {
               if (silentWin && !silentWin.isDestroyed()) {
                 silentWin.destroy();
               }
 
-              // FORCED RE-ACTIVATION OF MAIN WINDOW (Nuclear Option)
+              // FORCED RE-ACTIVATION OF MAIN WINDOW
               if (mainWindow) {
                 mainWindow.setEnabled(true);
                 mainWindow.setIgnoreMouseEvents(false);
@@ -558,18 +873,113 @@ function setupIPCHandlers() {
                 console.log('✅ Print job sent successfully');
                 resolve(true);
               }
-            });
-          } catch (err) {
-            console.error('❌ Error during print preparation:', err);
-            if (!silentWin.isDestroyed()) silentWin.destroy();
-            reject(err);
-          }
-        }, 1000); // 1 second delay to ensure rendering
+            }, 800);
+          });
+        } catch (err) {
+          clearTimeout(printTimeout);
+          settled = true;
+          console.error('❌ Error during print preparation:', err);
+          if (silentWin && !silentWin.isDestroyed()) silentWin.destroy();
+          reject(err);
+        }
       });
 
       silentWin.on('unresponsive', () => {
-        if (!silentWin.isDestroyed()) silentWin.destroy();
-        reject(new Error('Print window became unresponsive'));
+        if (!settled) {
+          settled = true;
+          clearTimeout(printTimeout);
+          if (!silentWin.isDestroyed()) silentWin.destroy();
+          reject(new Error('Print window became unresponsive'));
+        }
+      });
+    });
+  });
+
+  // PRINT CREDIT SUMMARY SILENTLY
+  ipcMain.handle('print:creditSummary', async (event, data) => {
+    console.log(`🖨️ Printing Credit Summary for: ${data.customerName}`);
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const silentWin = new BrowserWindow({
+        show: false,
+        width: 320,
+        height: 1000,
+        webPreferences: { nodeIntegration: true, contextIsolation: false }
+      });
+
+      const printTimeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          console.error('❌ Summary Print timeout: window did not finish loading within 15 seconds');
+          if (silentWin && !silentWin.isDestroyed()) silentWin.destroy();
+          reject(new Error('Print timed out after 15 seconds'));
+        }
+      }, 15000);
+
+      const html = generateCreditSummaryHTML(data);
+      silentWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+      silentWin.webContents.on('did-finish-load', async () => {
+        if (settled) return;
+        try {
+          // Minimal wait for layout — 100ms is sufficient for simple thermal HTML
+          await new Promise(res => setTimeout(res, 100));
+          if (settled) return;
+
+          // Use cached printer to avoid slow getPrintersAsync() on every print
+          console.log(`🖨️ Target Printer (Summary): ${cachedPrinterName || 'System Default'}`);
+
+          const printOptions = {
+            silent: true,
+            printBackground: true,
+            deviceName: cachedPrinterName,
+            color: false,
+            margins: { marginType: 'none' },
+            landscape: false,
+            scaleFactor: 100,
+            pageSize: { width: 80000, height: 297000 }
+          };
+
+          silentWin.webContents.print(printOptions, (success, errorType) => {
+            clearTimeout(printTimeout);
+            settled = true;
+            
+            setTimeout(() => {
+              if (silentWin && !silentWin.isDestroyed()) silentWin.destroy();
+              
+              // Forced re-activation of main window (important if modal/overlay was used)
+              if (mainWindow) {
+                mainWindow.setEnabled(true);
+                mainWindow.setIgnoreMouseEvents(false);
+                if (mainWindow.isMinimized()) mainWindow.restore();
+                mainWindow.show();
+                mainWindow.focus();
+                
+                setTimeout(() => {
+                  if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.focus();
+                    mainWindow.webContents.send('print-finished');
+                  }
+                }, 200);
+              }
+
+              if (success) {
+                console.log('✅ Summary print job sent successfully');
+                resolve({ success: true });
+              } else {
+                console.error(`❌ Summary print failed: ${errorType}`);
+                reject(new Error(errorType || 'Printing failed'));
+              }
+            }, 800);
+          });
+        } catch (error) {
+          clearTimeout(printTimeout);
+          settled = true;
+          console.error('❌ Error during summary print preparation:', error);
+          if (silentWin && !silentWin.isDestroyed()) silentWin.destroy();
+          reject(error);
+        }
       });
     });
   });
@@ -918,8 +1328,8 @@ function generateBillHTML(billData) {
       <div class="bill-info">
         <div class="bill-info-line"><span class="bold">Bill No:</span> ${billNumber}</div>
         <div class="bill-info-line"><span class="bold">Date:</span> ${dateTime}</div>
-        <div class="bill-info-line"><span class="bold">To:</span> ${billData.customerName || 'Cash Sale'}</div>
-        ${supplierName ? `<div class="bill-info-line"><span class="bold">Supplier:</span> ${supplierName}</div>` : ''}
+        <div class="bill-info-line"><span class="bold">Bill To:</span> ${billData.customerName || 'Cash Sale'}</div>
+        ${supplierName ? `<div class="bill-info-line"><span class="bold">To:</span> ${supplierName}</div>` : ''}
       </div>
       
       <div class="divider"></div>
@@ -964,24 +1374,6 @@ function generateBillHTML(billData) {
           <span class="total-amount bold">${total.toFixed(0)}</span>
         </div>
       </div>
-      
-      <!-- PAYMENT INFO -->
-      <div class="payment-info">
-        <div class="payment-line">
-          <span class="left">Payment</span>
-          <span class="right">${billData.customerName ? 'CREDIT' : 'CASH'}</span>
-        </div>
-        <div class="payment-line">
-          <span class="left">Paid</span>
-          <span class="right">${billData.customerName ? '0' : total.toFixed(0)}</span>
-        </div>
-        <div class="payment-line">
-          <span class="left">Balance</span>
-          <span class="right">${billData.customerName ? total.toFixed(0) : '0'}</span>
-        </div>
-      </div>
-      
-      <div class="divider"></div>
       
       <!-- FOOTER -->
       <div class="footer">
@@ -1136,9 +1528,9 @@ function generateKOTHTML(billData) {
     </head>
     <body>
       <div class="center bold kot-title">KOT - PARCEL</div>
-      <div class="center kot-date">Bill No: ${billNumber}</div>
-      <div class="center kot-date">Date: ${dateTime}</div>
-      ${supplierName ? `<div class="center kot-date">Supplier: ${supplierName}</div>` : ''}
+      <div class="kot-date">Bill No: ${billNumber}</div>
+      <div class="kot-date">Date: ${dateTime}</div>
+      ${supplierName ? `<div class="kot-date">To: ${supplierName}</div>` : ''}
       
       <div class="divider"></div>
       
@@ -1160,6 +1552,91 @@ function generateKOTHTML(billData) {
       </table>
       
       <div class="center bold footer">--- KITCHEN COPY ---</div>
+    </body>
+    </html>
+  `;
+}
+
+/**
+ * Generate HTML for Credit Summary (Statement)
+ */
+function generateCreditSummaryHTML(data) {
+  const { customerName, bills, startDate, endDate, total, hotelName, address, phone } = data;
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          width: 230px;
+          font-family: Arial, sans-serif;
+          font-size: 12px;
+          line-height: 1.2;
+          padding: 2px;
+          color: #000;
+        }
+        .header { text-align: center; margin-bottom: 8px; }
+        .hotel-name { font-size: 16px; font-weight: 800; margin-bottom: 2px; }
+        .header-info { font-size: 10px; margin-bottom: 1px; }
+        .divider { border-top: 1px dashed #000; margin: 5px 0; }
+        .title { text-align: center; font-weight: 800; font-size: 14px; margin-bottom: 5px; text-decoration: underline; }
+        .info-line { font-size: 11px; margin-bottom: 2px; }
+        .bold { font-weight: 700; }
+        table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+        th { text-align: left; border-bottom: 1px solid #000; font-size: 11px; padding: 3px 0; }
+        td { padding: 4px 0; font-size: 12px; }
+        .text-right { text-align: right; }
+        .total-section { border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 8px 0; margin: 10px 0; text-align: center; }
+        .total-label { font-size: 14px; }
+        .total-amount { font-size: 24px; font-weight: 800; }
+        .footer { text-align: center; font-size: 10px; margin-top: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="hotel-name">${hotelName || 'KM Unavagam'}</div>
+        <div class="header-info">${address || 'Bodipalaiyam Main Road, Malumichampatti'}</div>
+        <div class="header-info">Ph: ${phone || '8680031372'}</div>
+      </div>
+      
+      <div class="divider"></div>
+      
+      <div class="title">CREDIT SUMMARY</div>
+      
+      <div class="info-line"><span class="bold">Customer:</span> ${customerName}</div>
+      <div class="info-line"><span class="bold">Period:</span> ${startDate} to ${endDate}</div>
+      
+      <div class="divider"></div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>DATE</th>
+            <th class="text-right">AMOUNT (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bills.map(b => `
+            <tr>
+              <td>${b.bill_date.split('-').reverse().join('/')}</td>
+              <td class="text-right">${b.daily_total.toFixed(0)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      
+      <div class="total-section">
+        <span class="total-label">TOTAL: </span>
+        <span class="total-amount">₹${total.toFixed(0)}</span>
+      </div>
+      
+      <div class="footer">
+        <div class="bold">Thank You! Visit Again!</div>
+        <div style="margin-top: 3px;">Software by LancingHub</div>
+      </div>
     </body>
     </html>
   `;

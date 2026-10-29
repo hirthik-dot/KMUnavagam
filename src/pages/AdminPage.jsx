@@ -22,8 +22,17 @@ function AdminPage({ onNavigate }) {
     const [toast, setToast] = useState(null);
     const [confirmDialog, setConfirmDialog] = useState(null);
 
-    // Form state
+    // Form state for NEW item
     const [formData, setFormData] = useState({
+        nameTamil: '',
+        nameEnglish: '',
+        price: '',
+        category: 'Other',
+        imagePath: '',
+    });
+
+    // Form state for EDITING item (Modal)
+    const [editFormData, setEditFormData] = useState({
         nameTamil: '',
         nameEnglish: '',
         price: '',
@@ -37,6 +46,7 @@ function AdminPage({ onNavigate }) {
         loadCategories();
         loadSuppliers();
     }, []);
+
 
     /**
      * Load all food items (including inactive ones)
@@ -161,33 +171,41 @@ function AdminPage({ onNavigate }) {
         }
 
         try {
-            await window.electronAPI.addSupplier(newSupplierName.trim());
+            await window.electronAPI.addSupplier(newSupplierName.trim(), 0);
             setNewSupplierName('');
             loadSuppliers();
-            showToast('Supplier added successfully!');
+            showToast('Staff added successfully!');
         } catch (error) {
             console.error('Error adding supplier:', error);
-            showToast('Failed to add supplier.', 'error');
+            showToast('Failed to add staff.', 'error');
         }
     }
 
     /**
      * Update a supplier
      */
-    async function handleUpdateSupplier(id, newName, isActive) {
+    async function handleUpdateSupplier(id, newName, dailyWage, isActive) {
         if (!newName.trim()) {
-            showToast('Supplier name cannot be empty!', 'warning');
+            showToast('Staff name cannot be empty!', 'warning');
             return;
         }
 
+        // Save scroll position before update
+        const scrollY = window.scrollY;
+
         try {
-            await window.electronAPI.updateSupplier(id, newName.trim(), isActive);
+            await window.electronAPI.updateSupplier(id, newName.trim(), 0, isActive);
             setEditingSupplier(null);
-            loadSuppliers();
-            showToast('Supplier updated successfully!');
+            await loadSuppliers();
+            showToast('Staff updated successfully!');
+
+            // Restore scroll position after state update
+            requestAnimationFrame(() => {
+                window.scrollTo(0, scrollY);
+            });
         } catch (error) {
             console.error('Error updating supplier:', error);
-            showToast('Failed to update supplier.', 'error');
+            showToast('Failed to update staff.', 'error');
         }
     }
 
@@ -224,24 +242,29 @@ function AdminPage({ onNavigate }) {
     }
 
     /**
-     * Handle image file selection
+     * Handle edit form input changes
      */
-    async function handleImageUpload(e) {
+    function handleEditInputChange(e) {
+        const { name, value } = e.target;
+        setEditFormData((prev) => ({
+            ...prev,
+            [name]: value,
+        }));
+    }
+
+    /**
+     * Handle image upload for Edit Modal
+     */
+    async function handleEditImageUpload(e) {
         const file = e.target.files[0];
         if (!file) return;
-
         try {
-            // Read file as base64
             const reader = new FileReader();
             reader.onload = async (event) => {
                 const imageData = event.target.result;
                 const fileName = `food_${Date.now()}_${file.name}`;
-
-                // Save image via Electron
                 const savedPath = await window.electronAPI.saveImage(imageData, fileName);
-
-                // Update form data with saved path
-                setFormData((prev) => ({
+                setEditFormData((prev) => ({
                     ...prev,
                     imagePath: savedPath,
                 }));
@@ -249,12 +272,12 @@ function AdminPage({ onNavigate }) {
             reader.readAsDataURL(file);
         } catch (error) {
             console.error('Error uploading image:', error);
-            showToast('Failed to upload image. Please try again.', 'error');
+            showToast('Failed to upload image.', 'error');
         }
     }
 
     /**
-     * Handle form submission (Add or Update)
+     * Handle form submission (Add New Item Only)
      */
     async function handleSubmit(e) {
         e.preventDefault();
@@ -272,29 +295,15 @@ function AdminPage({ onNavigate }) {
         }
 
         try {
-            if (editingItem) {
-                // Update existing item
-                await window.electronAPI.updateItem(
-                    editingItem.id,
-                    formData.nameTamil,
-                    formData.nameEnglish,
-                    price,
-                    formData.imagePath || null,
-                    formData.category
-                );
-                showToast('Item updated successfully!');
-                setEditingItem(null);
-            } else {
-                // Add new item
-                await window.electronAPI.addItem(
-                    formData.nameTamil,
-                    formData.nameEnglish,
-                    price,
-                    formData.imagePath || null,
-                    formData.category
-                );
-                showToast('Item added successfully!');
-            }
+            // Add new item (will reactivate if same name found as inactive)
+            await window.electronAPI.addItem(
+                formData.nameTamil,
+                formData.nameEnglish,
+                price,
+                formData.imagePath || null,
+                formData.category
+            );
+            showToast('Item added successfully!');
 
             // Reset form
             setFormData({
@@ -308,25 +317,64 @@ function AdminPage({ onNavigate }) {
             // Reload items
             loadItems();
         } catch (error) {
-            console.error('Error saving item:', error);
-            showToast('Failed to save item. Please try again.', 'error');
+            console.error('Error adding item:', error);
+            // Show a user-friendly error — surface the actual reason if available
+            const msg = error?.message || '';
+            if (msg.toLowerCase().includes('already exists')) {
+                showToast(msg, 'warning');
+            } else {
+                showToast('Failed to add item. Please try again.', 'error');
+            }
         }
     }
 
     /**
-     * Start editing an item
+     * Handle Edit Modal Submission
+     */
+    async function handleEditSubmit(e) {
+        e.preventDefault();
+
+        if (!editFormData.nameTamil || !editFormData.nameEnglish || !editFormData.price) {
+            showToast('Please fill in all required fields!', 'warning');
+            return;
+        }
+
+        const price = parseFloat(editFormData.price);
+        if (isNaN(price)) {
+            showToast('Please enter a valid price!', 'warning');
+            return;
+        }
+
+        try {
+            await window.electronAPI.updateItem(
+                editingItem.id,
+                editFormData.nameTamil,
+                editFormData.nameEnglish,
+                price,
+                editFormData.imagePath || null,
+                editFormData.category
+            );
+            showToast('Item updated successfully!');
+            setEditingItem(null);
+            loadItems();
+        } catch (error) {
+            console.error('Error updating item:', error);
+            showToast('Failed to update item.', 'error');
+        }
+    }
+
+    /**
+     * Start editing an item (Open Modal)
      */
     function handleEdit(item) {
         setEditingItem(item);
-        setFormData({
+        setEditFormData({
             nameTamil: item.name_tamil,
             nameEnglish: item.name_english,
             price: item.price.toString(),
             category: item.category || 'Other',
             imagePath: item.image_path || '',
         });
-        // Scroll to top
-        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     /**
@@ -347,10 +395,18 @@ function AdminPage({ onNavigate }) {
      * Toggle item active status
      */
     async function handleToggleStatus(item) {
+        // Save scroll position before update
+        const scrollY = window.scrollY;
+
         try {
             const newStatus = !item.is_active;
             await window.electronAPI.toggleItemStatus(item.id, newStatus);
-            loadItems();
+            await loadItems();
+
+            // Restore scroll position after state update
+            requestAnimationFrame(() => {
+                window.scrollTo(0, scrollY);
+            });
         } catch (error) {
             console.error('Error toggling item status:', error);
             showToast('Failed to update item status.', 'error');
@@ -362,7 +418,7 @@ function AdminPage({ onNavigate }) {
      */
     async function handleDelete(item) {
         setConfirmDialog({
-            message: `Are you sure you want to delete "${item.name_english}"?\nThis action cannot be undone.`,
+            message: `Are you sure you want to delete "${item.name_english}"?\n\nNote: If this item was used in past bills, it will be disabled instead of permanently removed to protect bill history.`,
             onConfirm: async () => {
                 setConfirmDialog(null);
                 try {
@@ -379,8 +435,8 @@ function AdminPage({ onNavigate }) {
     }
 
     // Filter items based on category selection
-    const filteredItems = categoryFilter === 'All' 
-        ? items 
+    const filteredItems = categoryFilter === 'All'
+        ? items
         : items.filter(item => item.category === categoryFilter);
 
     if (loading) {
@@ -397,201 +453,198 @@ function AdminPage({ onNavigate }) {
             <PageHeader onNavigate={onNavigate} backTo="home" />
 
             <div className="admin-page-content">
-                {/* Add/Edit Form */}
+                {/* Add Form */}
                 <div className="admin-form-section card">
-                <h2 className="section-title">
-                    {editingItem ? 'Edit Food Item' : 'Add New Food Item'}
-                </h2>
+                    <h2 className="section-title">
+                        <i className="fas fa-plus-circle"></i> Add New Food Item
+                    </h2>
 
-                <form onSubmit={handleSubmit} className="admin-form">
-                    <div className="form-group">
-                        <label htmlFor="nameTamil">Tamil Name *</label>
-                        <input
-                            type="text"
-                            id="nameTamil"
-                            name="nameTamil"
-                            value={formData.nameTamil}
-                            onChange={handleInputChange}
-                            placeholder="தோசை"
-                            required
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label htmlFor="nameEnglish">English Name *</label>
-                        <input
-                            type="text"
-                            id="nameEnglish"
-                            name="nameEnglish"
-                            value={formData.nameEnglish}
-                            onChange={handleInputChange}
-                            placeholder="Dosa"
-                            required
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label htmlFor="price">Price (₹) *</label>
-                        <input
-                            type="number"
-                            id="price"
-                            name="price"
-                            value={formData.price}
-                            onChange={handleInputChange}
-                            placeholder="40"
-                            step="0.01"
-                            min="0"
-                            required
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label htmlFor="category">Category *</label>
-                        <select
-                            id="category"
-                            name="category"
-                            value={formData.category}
-                            onChange={handleInputChange}
-                            required
-                        >
-                            {categories.map((cat) => (
-                                <option key={cat.id} value={cat.name}>
-                                    {cat.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="form-group">
-                        <label htmlFor="imageUpload">Food Image (Optional)</label>
-                        <div className="image-upload-container">
+                    <form onSubmit={handleSubmit} className="admin-form">
+                        <div className="form-group">
+                            <label htmlFor="nameTamil">Tamil Name *</label>
                             <input
-                                type="file"
-                                id="imageUpload"
-                                accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.svg"
-                                onChange={handleImageUpload}
-                                style={{ display: 'none' }}
+                                type="text"
+                                id="nameTamil"
+                                name="nameTamil"
+                                value={formData.nameTamil}
+                                onChange={(e) => setFormData({ ...formData, nameTamil: e.target.value })}
+                                placeholder="தோசை"
+                                required
                             />
-                            <button
-                                type="button"
-                                className="btn-upload"
-                                onClick={() => document.getElementById('imageUpload').click()}
-                            >
-                                <i className="fa-solid fa-folder-open"></i> Choose Image
-                            </button>
-                            {formData.imagePath && (
-                                <span className="image-selected">✓ Image selected</span>
-                            )}
                         </div>
-                        <p className="form-hint">
-                            Click to select an image from your computer (JPG, PNG, etc.)
-                        </p>
-                    </div>
 
-                    <div className="form-actions">
-                        <button type="submit" className="btn-primary">
-                            {editingItem ? 'Update Item' : 'Add Item'}
+                        <div className="form-group">
+                            <label htmlFor="nameEnglish">English Name *</label>
+                            <input
+                                type="text"
+                                id="nameEnglish"
+                                name="nameEnglish"
+                                value={formData.nameEnglish}
+                                onChange={(e) => setFormData({ ...formData, nameEnglish: e.target.value })}
+                                placeholder="Dosa"
+                                required
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="price">Price (₹) *</label>
+                            <input
+                                type="number"
+                                id="price"
+                                name="price"
+                                value={formData.price}
+                                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                                placeholder="40"
+                                step="0.01"
+                                min="0"
+                                required
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="category">Category *</label>
+                            <select
+                                id="category"
+                                name="category"
+                                value={formData.category}
+                                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                                required
+                            >
+                                {categories.map((cat) => (
+                                    <option key={cat.id} value={cat.name}>
+                                        {cat.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="imageUpload">Food Image (Optional)</label>
+                            <div className="image-upload-container">
+                                <input
+                                    type="file"
+                                    id="imageUpload"
+                                    accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.svg"
+                                    onChange={(e) => {
+                                        const file = e.target.files[0];
+                                        if (!file) return;
+                                        const reader = new FileReader();
+                                        reader.onload = async (event) => {
+                                            const savedPath = await window.electronAPI.saveImage(event.target.result, `food_${Date.now()}_${file.name}`);
+                                            setFormData({ ...formData, imagePath: savedPath });
+                                        };
+                                        reader.readAsDataURL(file);
+                                    }}
+                                    style={{ display: 'none' }}
+                                />
+                                <button
+                                    type="button"
+                                    className="btn-upload"
+                                    onClick={() => document.getElementById('imageUpload').click()}
+                                >
+                                    <i className="fa-solid fa-folder-open"></i> Choose Image
+                                </button>
+                                {formData.imagePath && (
+                                    <span className="image-selected">✓ Image selected</span>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="form-actions">
+                            <button type="submit" className="btn-primary">
+                                Add Item
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                {/* Category Management Section */}
+                <div className="category-management-section card">
+                    <h2 className="section-title">
+                        <i className="fas fa-tags"></i> Manage Categories
+                    </h2>
+
+                    {/* Add New Category */}
+                    <div className="add-category-form">
+                        <input
+                            type="text"
+                            placeholder="New category name..."
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleAddCategory();
+                                }
+                            }}
+                        />
+                        <button className="btn-primary" onClick={handleAddCategory}>
+                            <i className="fas fa-plus"></i> Add Category
                         </button>
-                        {editingItem && (
-                            <button
-                                type="button"
-                                className="btn-secondary"
-                                onClick={handleCancelEdit}
-                            >
-                                <i className="fa-solid fa-xmark"></i> Cancel
-                            </button>
-                        )}
                     </div>
-                </form>
-            </div>
 
-            {/* Category Management Section */}
-            <div className="category-management-section card">
-                <h2 className="section-title">
-                    <i className="fas fa-tags"></i> Manage Categories
-                </h2>
-
-                {/* Add New Category */}
-                <div className="add-category-form">
-                    <input
-                        type="text"
-                        placeholder="New category name..."
-                        value={newCategoryName}
-                        onChange={(e) => setNewCategoryName(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                handleAddCategory();
-                            }
-                        }}
-                    />
-                    <button className="btn-primary" onClick={handleAddCategory}>
-                        <i className="fas fa-plus"></i> Add Category
-                    </button>
-                </div>
-
-                {/* Category List */}
-                <div className="category-list">
-                    {categories.map((category) => (
-                        <div key={category.id} className="category-item">
-                            {editingCategory === category.id ? (
-                                <div className="category-edit-container">
-                                    <input
-                                        type="text"
-                                        id={`edit-cat-${category.id}`}
-                                        defaultValue={category.name}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                handleUpdateCategory(category.id, e.target.value);
-                                            }
-                                            if (e.key === 'Escape') {
-                                                setEditingCategory(null);
-                                            }
-                                        }}
-                                        autoFocus
-                                    />
-                                    <div className="category-actions">
-                                        <button
-                                            className="btn-success"
-                                            onClick={() => {
-                                                const val = document.getElementById(`edit-cat-${category.id}`).value;
-                                                handleUpdateCategory(category.id, val);
+                    {/* Category List */}
+                    <div className="category-list">
+                        {categories.map((category) => (
+                            <div key={category.id} className="category-item">
+                                {editingCategory === category.id ? (
+                                    <div className="category-edit-container">
+                                        <input
+                                            type="text"
+                                            id={`edit-cat-${category.id}`}
+                                            defaultValue={category.name}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    handleUpdateCategory(category.id, e.target.value);
+                                                }
+                                                if (e.key === 'Escape') {
+                                                    setEditingCategory(null);
+                                                }
                                             }}
-                                        >
-                                            <i className="fas fa-check"></i>
-                                        </button>
-                                        <button
-                                            className="btn-secondary"
-                                            onClick={() => setEditingCategory(null)}
-                                        >
-                                            <i className="fas fa-times"></i>
-                                        </button>
+                                            autoFocus
+                                        />
+                                        <div className="category-actions">
+                                            <button
+                                                className="btn-success"
+                                                onClick={() => {
+                                                    const val = document.getElementById(`edit-cat-${category.id}`).value;
+                                                    handleUpdateCategory(category.id, val);
+                                                }}
+                                            >
+                                                <i className="fas fa-check"></i>
+                                            </button>
+                                            <button
+                                                className="btn-secondary"
+                                                onClick={() => setEditingCategory(null)}
+                                            >
+                                                <i className="fas fa-times"></i>
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            ) : (
-                                <>
-                                    <span className="category-name">
-                                        <i className="fas fa-tag"></i> {category.name}
-                                    </span>
-                                    <div className="category-actions">
-                                        <button
-                                            className="btn-edit"
-                                            onClick={() => setEditingCategory(category.id)}
-                                        >
-                                            <i className="fas fa-edit"></i> Edit
-                                        </button>
-                                        <button
-                                            className="btn-delete"
-                                            onClick={() => handleDeleteCategory(category.id, category.name)}
-                                        >
-                                            <i className="fas fa-trash"></i> Delete
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    ))}
+                                ) : (
+                                    <>
+                                        <span className="category-name" title={category.name}>
+                                            <i className="fas fa-tag"></i> {category.name}
+                                        </span>
+                                        <div className="category-actions">
+                                            <button
+                                                className="btn-edit"
+                                                onClick={() => setEditingCategory(category.id)}
+                                            >
+                                                <i className="fas fa-edit"></i> Edit
+                                            </button>
+                                            <button
+                                                className="btn-delete"
+                                                onClick={() => handleDeleteCategory(category.id, category.name)}
+                                            >
+                                                <i className="fas fa-trash"></i> Delete
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 </div>
-            </div>
 
                 {/* Staff Management Section */}
                 <div className="staff-management-section card">
@@ -600,17 +653,12 @@ function AdminPage({ onNavigate }) {
                     </h2>
 
                     {/* Add New Staff */}
-                    <div className="add-category-form">
+                    <div className="add-category-form staff-add-form" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px' }}>
                         <input
                             type="text"
                             placeholder="Staff name..."
                             value={newSupplierName}
                             onChange={(e) => setNewSupplierName(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    handleAddSupplier();
-                                }
-                            }}
                         />
                         <button className="btn-primary" onClick={handleAddSupplier}>
                             <i className="fas fa-plus"></i> Add Staff
@@ -622,27 +670,19 @@ function AdminPage({ onNavigate }) {
                         {suppliers.map((supplier) => (
                             <div key={supplier.id} className="category-item">
                                 {editingSupplier === supplier.id ? (
-                                    <div className="category-edit-container">
+                                    <div className="category-edit-container staff-edit-container" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px', width: '100%' }}>
                                         <input
                                             type="text"
-                                            id={`edit-staff-${supplier.id}`}
+                                            id={`edit-staff-name-${supplier.id}`}
                                             defaultValue={supplier.name}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    handleUpdateSupplier(supplier.id, e.target.value, supplier.is_active);
-                                                }
-                                                if (e.key === 'Escape') {
-                                                    setEditingSupplier(null);
-                                                }
-                                            }}
                                             autoFocus
                                         />
                                         <div className="category-actions">
                                             <button
                                                 className="btn-success"
                                                 onClick={() => {
-                                                    const val = document.getElementById(`edit-staff-${supplier.id}`).value;
-                                                    handleUpdateSupplier(supplier.id, val, supplier.is_active);
+                                                    const nameVal = document.getElementById(`edit-staff-name-${supplier.id}`).value;
+                                                    handleUpdateSupplier(supplier.id, nameVal, 0, supplier.is_active);
                                                 }}
                                             >
                                                 <i className="fas fa-check"></i>
@@ -657,13 +697,14 @@ function AdminPage({ onNavigate }) {
                                     </div>
                                 ) : (
                                     <>
-                                        <span className={`category-name ${!supplier.is_active ? 'inactive-text' : ''}`}>
-                                            <i className="fas fa-user"></i> {supplier.name} {!supplier.is_active && '(Inactive)'}
+                                        <span className={`category-name ${!supplier.is_active ? 'inactive-text' : ''}`} title={supplier.name}>
+                                            <i className="fas fa-user"></i> {supplier.name} 
+                                            {!supplier.is_active && ' (Inactive)'}
                                         </span>
                                         <div className="category-actions">
                                             <button
                                                 className={`btn-toggle ${supplier.is_active ? 'active' : 'inactive'}`}
-                                                onClick={() => handleUpdateSupplier(supplier.id, supplier.name, !supplier.is_active)}
+                                                onClick={() => handleUpdateSupplier(supplier.id, supplier.name, 0, !supplier.is_active)}
                                                 title={supplier.is_active ? 'Deactivate' : 'Activate'}
                                             >
                                                 <i className={`fas fa-${supplier.is_active ? 'eye' : 'eye-slash'}`}></i>
@@ -692,7 +733,7 @@ function AdminPage({ onNavigate }) {
                 <div className="admin-items-section">
                     <div className="items-header">
                         <h2 className="section-title">Existing Items ({filteredItems.length})</h2>
-                        
+
                         <div className="filter-controls">
                             <label htmlFor="categoryFilter">Filter by Category:</label>
                             <select
@@ -724,8 +765,24 @@ function AdminPage({ onNavigate }) {
                             {filteredItems.map((item) => (
                                 <div
                                     key={item.id}
-                                    className={`item-card card ${!item.is_active ? 'inactive' : ''}`}
+                                    className={`item-card card ${!item.is_active ? 'inactive' : ''} ${editingItem?.id === item.id ? 'editing' : ''}`}
                                 >
+                                    {/* Item Image Preview */}
+                                    <div className="item-image-preview">
+                                        {item.image_path ? (
+                                            <img
+                                                src={`media://${item.image_path}`}
+                                                alt={item.name_english}
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                    e.target.parentElement.innerHTML = '<div class="no-image-small">No Image</div>';
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="no-image-small">No Image</div>
+                                        )}
+                                    </div>
+
                                     {/* Item Info */}
                                     <div className="item-info">
                                         <h3 className="item-name-tamil">{item.name_tamil}</h3>
@@ -766,10 +823,120 @@ function AdminPage({ onNavigate }) {
                     )}
                 </div>
             </div>
-            
+
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             {confirmDialog && <ConfirmDialog message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} />}
-            
+
+            {/* Edit Item Modal */}
+            {editingItem && (
+                <div className="edit-modal-overlay" onClick={() => setEditingItem(null)}>
+                    <div className="edit-modal-content card" onClick={(e) => e.stopPropagation()}>
+                        <div className="edit-modal-header">
+                            <h2 className="section-title">
+                                <i className="fa-solid fa-pen-to-square"></i> Edit Food Item
+                            </h2>
+                            <button className="close-modal" onClick={() => setEditingItem(null)}>
+                                <i className="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleEditSubmit} className="admin-form">
+                            <div className="form-group">
+                                <label htmlFor="edit-nameTamil">Tamil Name *</label>
+                                <input
+                                    type="text"
+                                    id="edit-nameTamil"
+                                    name="nameTamil"
+                                    value={editFormData.nameTamil}
+                                    onChange={handleEditInputChange}
+                                    required
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label htmlFor="edit-nameEnglish">English Name *</label>
+                                <input
+                                    type="text"
+                                    id="edit-nameEnglish"
+                                    name="nameEnglish"
+                                    value={editFormData.nameEnglish}
+                                    onChange={handleEditInputChange}
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label htmlFor="edit-price">Price (₹) *</label>
+                                <input
+                                    type="number"
+                                    id="edit-price"
+                                    name="price"
+                                    value={editFormData.price}
+                                    onChange={handleEditInputChange}
+                                    step="0.01"
+                                    min="0"
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label htmlFor="edit-category">Category *</label>
+                                <select
+                                    id="edit-category"
+                                    name="category"
+                                    value={editFormData.category}
+                                    onChange={handleEditInputChange}
+                                    required
+                                >
+                                    {categories.map((cat) => (
+                                        <option key={cat.id} value={cat.name}>
+                                            {cat.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label htmlFor="editImageUpload">Food Image (Optional)</label>
+                                <div className="image-upload-container">
+                                    <input
+                                        type="file"
+                                        id="editImageUpload"
+                                        accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.svg"
+                                        onChange={handleEditImageUpload}
+                                        style={{ display: 'none' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        className="btn-upload"
+                                        onClick={() => document.getElementById('editImageUpload').click()}
+                                    >
+                                        <i className="fa-solid fa-folder-open"></i> Change Image
+                                    </button>
+                                    {editFormData.imagePath && (
+                                        <span className="image-selected">✓ Image selected</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="form-actions">
+                                <button type="submit" className="btn-primary">
+                                    Update Item
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={() => setEditingItem(null)}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             <Footer />
         </div>
     );

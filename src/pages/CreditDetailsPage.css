@@ -7,7 +7,7 @@
 }
 
 .details-container {
-    max-width: 1200px;
+    max-width: 98%; width: 100%;
     margin: 0 auto;
     background: white;
     border-radius: 12px;
@@ -150,6 +150,34 @@
     transform: none;
 }
 
+.summary-btn {
+    flex: 1;
+    background-color: #6366f1;
+    color: white;
+    border: none;
+    padding: 16px;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.summary-btn:hover {
+    filter: brightness(0.9);
+    transform: translateY(-2px);
+}
+
+.form-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 10px;
+}
+
+.form-row .form-group {
+    flex: 1;
+}
+
 .amount-input-wrapper {
     display: flex;
     gap: 10px;
@@ -223,6 +251,54 @@
     text-align: right;
 }
 
+.type-credit {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+.type-payment {
+    color: #10b981;
+    font-weight: 600;
+}
+
+.amount-credit {
+    color: #ef4444;
+    text-align: right;
+}
+
+.amount-payment {
+    color: #10b981;
+    text-align: right;
+}
+
+.delete-item-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 5px;
+    transition: all 0.2s;
+}
+
+.edit-item-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 5px;
+    transition: all 0.2s;
+}
+
+.delete-item-btn:hover {
+    color: #ef4444;
+    transform: scale(1.2);
+}
+
+.edit-item-btn:hover {
+    color: #3b82f6;
+    transform: scale(1.2);
+}
+
 .view-btn {
     background: #e2e8f0;
     border: none;
@@ -282,7 +358,7 @@
     display: flex;
     align-items: center;
     margin-bottom: 20px;
-    max-width: 1200px;
+    max-width: 98%; width: 100%;
     margin: 0 auto 20px auto;
 }
 
@@ -432,4 +508,56 @@
 .confirm-delete-btn:hover {
     background: #dc2626;
     transform: scale(1.05);
+}
+
+.vendor-info-header {
+    background-color: #f5f3ff;
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.full-width {
+    grid-column: 1 / -1;
+}
+
+.section-subtitle {
+    margin-top: -10px;
+    margin-bottom: 20px;
+    color: #64748b;
+    font-size: 14px;
+}
+
+/* Bill Action Buttons */
+.actions-cell {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.delete-bill-btn-small {
+    background: #fee2e2;
+    color: #ef4444;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.delete-bill-btn-small:hover {
+    background: #ef4444;
+    color: white;
+    transform: scale(1.1);
+}
+
+.modal-overlay.danger {
+    background: rgba(127, 29, 29, 0.4);
+    backdrop-filter: blur(4px);
+}
+
+.confirm-icon.danger {
+    color: #ef4444;
 }

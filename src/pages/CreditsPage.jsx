@@ -83,11 +83,11 @@ function CreditsPage({ onNavigate, navData }) {
                         <table className="credits-table">
                             <thead>
                                 <tr>
-                                    <th>Customer Name</th>
-                                    <th>Phone</th>
-                                    <th>Total Credit (₹)</th>
-                                    <th>Total Paid (₹)</th>
-                                    <th>Balance (₹)</th>
+                                    <th className="name-header">Customer Name</th>
+                                    <th className="phone-header">Phone</th>
+                                    <th className="amount-header text-right">Total Credit (₹)</th>
+                                    <th className="amount-header text-right">Total Paid (₹)</th>
+                                    <th className="amount-header text-right">Balance (₹)</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -98,10 +98,10 @@ function CreditsPage({ onNavigate, navData }) {
                                         className="clickable-row"
                                     >
                                         <td className="name-cell">{c.name}</td>
-                                        <td>{c.phone || '-'}</td>
-                                        <td className="amount-cell">₹{c.total_credit?.toFixed(0)}</td>
-                                        <td className="amount-cell paid">₹{c.total_paid?.toFixed(0)}</td>
-                                        <td className={`amount-cell balance ${c.balance > 0 ? 'pending' : ''}`}>
+                                        <td className="phone-cell">{c.phone || '-'}</td>
+                                        <td className="amount-cell text-right">₹{c.total_credit?.toFixed(0)}</td>
+                                        <td className="amount-cell paid text-right">₹{c.total_paid?.toFixed(0)}</td>
+                                        <td className={`amount-cell balance text-right ${c.balance > 0 ? 'pending' : ''}`}>
                                             ₹{c.balance?.toFixed(0)}
                                         </td>
                                     </tr>
@@ -146,9 +146,9 @@ function CreditsPage({ onNavigate, navData }) {
                     </div>
                 </div>
             )}
-            
+
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-            
+
             <Footer />
         </div>
     );
