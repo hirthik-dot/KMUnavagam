@@ -5,7 +5,8 @@
  * Round to 2 decimals (removes float noise like 0.30000000000000004)
  */
 export function roundMoney(value) {
-    return Math.round((Number(value) || 0) * 100) / 100;
+    // "|| 0" turns -0 (from float leftovers like -0.0000000001) into 0, so it never shows as "-0"
+    return Math.round((Number(value) || 0) * 100) / 100 || 0;
 }
 
 /**
