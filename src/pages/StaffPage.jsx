@@ -30,9 +30,75 @@ function StaffPage({ onNavigate }) {
     const [editingTransactionId, setEditingTransactionId] = useState(null);
     const [transDate, setTransDate] = useState(getTodayLocaleDate());
 
+    // PIN lock, always on: 'checking' -> 'setup' (no PIN yet: create one) or 'locked' -> 'open'.
+    // Re-locks every time the page is left.
+    const [lockState, setLockState] = useState('checking');
+    const [pinInput, setPinInput] = useState('');
+    const [pinConfirm, setPinConfirm] = useState('');
+    const [pinError, setPinError] = useState('');
+    // "Forgot PIN?": reset password entry on the lock screen (null when hidden)
+    const [resetPassword, setResetPassword] = useState(null);
+
     useEffect(() => {
-        loadStaff();
+        window.electronAPI.hasStaffPin()
+            .then((hasPin) => setLockState(hasPin ? 'locked' : 'setup'))
+            .catch(() => setLockState('locked'));
     }, []);
+
+    // Forgot PIN: the reset password (from LancingHub) clears it, then a new PIN is created
+    const handleResetPin = async (e) => {
+        e.preventDefault();
+        try {
+            await window.electronAPI.resetStaffPin(resetPassword);
+            setResetPassword(null);
+            setPinError('');
+            setLockState('setup');
+        } catch (error) {
+            setPinError('Reset password is wrong.');
+        }
+    };
+
+    // First visit: create the PIN (entered twice), then open
+    const handleCreatePin = async (e) => {
+        e.preventDefault();
+        if (pinInput !== pinConfirm) {
+            setPinError('The two PINs do not match.');
+            setPinConfirm('');
+            return;
+        }
+        try {
+            await window.electronAPI.setStaffPin(pinInput);
+            setPinError('');
+            setLockState('open');
+            setToast({ message: '✅ PIN created. Keep it private.', type: 'success' });
+        } catch (error) {
+            setPinError('PIN must be 4 to 6 digits.');
+        } finally {
+            setPinInput('');
+            setPinConfirm('');
+        }
+    };
+
+    // Staff data is only loaded once unlocked
+    useEffect(() => {
+        if (lockState === 'open') loadStaff();
+    }, [lockState]);
+
+    const handleUnlock = async (e) => {
+        e.preventDefault();
+        try {
+            if (await window.electronAPI.verifyStaffPin(pinInput)) {
+                setPinError('');
+                setLockState('open');
+            } else {
+                setPinError('Wrong PIN. Try again.');
+            }
+        } catch (error) {
+            setPinError('Could not check the PIN.');
+        } finally {
+            setPinInput('');
+        }
+    };
 
     // Inactive (discharged) employees are listed too, below the active ones, so they can be found and re-activated
     async function loadStaff() {
@@ -288,6 +354,91 @@ function StaffPage({ onNavigate }) {
             ...(selectedStaffDetail.skips || []).map(s => ({ date: s.skip_date, skip: s })),
         ].sort((a, b) => b.date.localeCompare(a.date))
         : [];
+
+    if (lockState !== 'open') {
+        return (
+            <div className="staff-page">
+                <PageHeader onNavigate={onNavigate} backTo="home" />
+                <div className="staff-container">
+                    {lockState === 'setup' && (
+                        <form className="staff-lock-card" onSubmit={handleCreatePin}>
+                            <i className="fas fa-user-lock staff-lock-icon"></i>
+                            <h1>Create a PIN</h1>
+                            <p>Staff Maintenance is protected. Create a 4 to 6 digit PIN to keep wages and salary records private.</p>
+                            <input
+                                type="password"
+                                inputMode="numeric"
+                                maxLength={6}
+                                autoFocus
+                                value={pinInput}
+                                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+                                placeholder="New PIN"
+                                className="staff-lock-input"
+                            />
+                            <input
+                                type="password"
+                                inputMode="numeric"
+                                maxLength={6}
+                                value={pinConfirm}
+                                onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ''))}
+                                placeholder="Again"
+                                className="staff-lock-input"
+                            />
+                            {pinError && <p className="staff-lock-error">{pinError}</p>}
+                            <button type="submit" className="add-btn" disabled={pinInput.length < 4 || pinConfirm.length < 4}>
+                                <i className="fas fa-lock"></i> Save PIN &amp; Open
+                            </button>
+                        </form>
+                    )}
+                    {lockState === 'locked' && resetPassword !== null && (
+                        <form className="staff-lock-card" onSubmit={handleResetPin}>
+                            <i className="fas fa-key staff-lock-icon"></i>
+                            <h1>Reset PIN</h1>
+                            <p>Enter the reset password given by LancingHub. You will then create a new PIN.</p>
+                            <input
+                                type="password"
+                                autoFocus
+                                value={resetPassword}
+                                onChange={(e) => setResetPassword(e.target.value)}
+                                placeholder="Reset password"
+                                className="staff-lock-input reset"
+                            />
+                            {pinError && <p className="staff-lock-error">{pinError}</p>}
+                            <button type="submit" className="add-btn" disabled={!resetPassword.trim()}>Reset PIN</button>
+                            <button type="button" className="staff-lock-link" onClick={() => { setResetPassword(null); setPinError(''); }}>
+                                Back to PIN
+                            </button>
+                        </form>
+                    )}
+                    {lockState === 'locked' && resetPassword === null && (
+                        <form className="staff-lock-card" onSubmit={handleUnlock}>
+                            <i className="fas fa-lock staff-lock-icon"></i>
+                            <h1>Staff Maintenance is locked</h1>
+                            <p>Enter the PIN to view wages and salary records.</p>
+                            <input
+                                type="password"
+                                inputMode="numeric"
+                                maxLength={6}
+                                autoFocus
+                                value={pinInput}
+                                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+                                placeholder="PIN"
+                                className="staff-lock-input"
+                            />
+                            {pinError && <p className="staff-lock-error">{pinError}</p>}
+                            <button type="submit" className="add-btn" disabled={pinInput.length < 4}>
+                                <i className="fas fa-unlock"></i> Unlock
+                            </button>
+                            <button type="button" className="staff-lock-link" onClick={() => { setResetPassword(''); setPinError(''); }}>
+                                Forgot PIN?
+                            </button>
+                        </form>
+                    )}
+                </div>
+                <Footer />
+            </div>
+        );
+    }
 
     return (
         <div className="staff-page">

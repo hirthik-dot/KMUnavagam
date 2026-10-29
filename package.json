@@ -1,7 +1,7 @@
 {
   "name": "hotel-billing-app",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "commonjs",
   "main": "electron/main.js",
   "description": "Offline Hotel Billing Application",

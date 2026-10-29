@@ -650,3 +650,69 @@
     border-color: #10b981;
     background: #ecfdf5;
 }
+
+/* Staff Maintenance PIN lock screen */
+.staff-lock-card {
+    max-width: 420px;
+    margin: 60px auto;
+    padding: 40px;
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    text-align: center;
+}
+
+.staff-lock-icon {
+    font-size: 44px;
+    color: #64748b;
+}
+
+.staff-lock-card h1 {
+    margin: 0;
+    font-size: 26px;
+    color: #1e293b;
+}
+
+.staff-lock-card p {
+    margin: 0;
+    color: #64748b;
+}
+
+.staff-lock-input {
+    width: 200px;
+    padding: 14px;
+    font-size: 28px;
+    letter-spacing: 10px;
+    text-align: center;
+    border: 2px solid #cbd5e1;
+    border-radius: 12px;
+}
+
+.staff-lock-input:focus {
+    outline: none;
+    border-color: #10b981;
+}
+
+.staff-lock-error {
+    color: #dc2626 !important;
+    font-weight: 700;
+}
+
+.staff-lock-input.reset {
+    width: 280px;
+    font-size: 20px;
+    letter-spacing: 2px;
+}
+
+.staff-lock-link {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 15px;
+    text-decoration: underline;
+    cursor: pointer;
+}

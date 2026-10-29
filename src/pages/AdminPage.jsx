@@ -26,6 +26,11 @@ function AdminPage({ onNavigate }) {
     const [confirmDialog, setConfirmDialog] = useState(null);
     const [printLanguage, setPrintLanguage] = useState(DEFAULT_PRINT_LANGUAGE);
     const [displayLanguage, setDisplayLanguage] = useState(DEFAULT_DISPLAY_LANGUAGE);
+    // Staff Maintenance PIN lock (always on): whether a PIN exists yet, and the set/change form (null when hidden)
+    const [staffLockEnabled, setStaffLockEnabled] = useState(false);
+    const [pinForm, setPinForm] = useState(null);
+    // Reset PIN form (asks for the reset password given by LancingHub); null when hidden
+    const [resetForm, setResetForm] = useState(null);
 
     // Form state for NEW item
     const [formData, setFormData] = useState({
@@ -52,6 +57,7 @@ function AdminPage({ onNavigate }) {
         loadItems();
         loadCategories();
         loadLanguageSettings();
+        window.electronAPI.hasStaffPin().then(setStaffLockEnabled).catch(() => {});
     }, []);
 
     /**
@@ -407,6 +413,44 @@ function AdminPage({ onNavigate }) {
 
     const missingHindiCount = items.filter(item => item.is_active && !item.name_hindi).length;
 
+    /**
+     * Save a new Staff Maintenance PIN (set or change). Entered twice so a typo can't lock everyone out.
+     */
+    async function handleSavePin(e) {
+        e.preventDefault();
+        if (!/^\d{4,6}$/.test(pinForm.pin)) {
+            showToast('PIN must be 4 to 6 digits.', 'warning');
+            return;
+        }
+        if (pinForm.pin !== pinForm.confirm) {
+            showToast('The two PINs do not match.', 'warning');
+            return;
+        }
+        try {
+            await window.electronAPI.setStaffPin(pinForm.pin, pinForm.current);
+            setStaffLockEnabled(true);
+            setPinForm(null);
+            showToast('Staff Maintenance PIN saved!');
+        } catch (error) {
+            console.error('Error saving PIN:', error);
+            showToast(/Current PIN is wrong/.test(error.message) ? 'Current PIN is wrong.' : 'Failed to save PIN.', 'error');
+        }
+    }
+
+    // Forgotten PIN: with the reset password the PIN is cleared; the next visit asks to create a new one
+    async function handleResetPin(e) {
+        e.preventDefault();
+        try {
+            await window.electronAPI.resetStaffPin(resetForm.password);
+            setStaffLockEnabled(false);
+            setResetForm(null);
+            showToast('PIN reset. A new PIN will be asked on the next visit to Staff Maintenance.');
+        } catch (error) {
+            console.error('Error resetting PIN:', error);
+            showToast(/Reset password is wrong/.test(error.message) ? 'Reset password is wrong.' : 'Failed to reset PIN.', 'error');
+        }
+    }
+
     // Filter items based on category selection
     const filteredItems = categoryFilter === 'All'
         ? items
@@ -676,6 +720,76 @@ function AdminPage({ onNavigate }) {
                             </button>
                         ))}
                     </div>
+                </div>
+
+                {/* Staff Maintenance Lock Section */}
+                <div className="staff-lock-section card">
+                    <h2 className="section-title">
+                        <i className="fas fa-lock"></i> Staff Maintenance Lock
+                    </h2>
+                    <p className="print-settings-hint">
+                        {staffLockEnabled
+                            ? 'Staff Maintenance asks for the PIN every time it is opened. Forgot the PIN? Use Reset PIN with the reset password from LancingHub.'
+                            : 'No PIN yet: it will be created the first time Staff Maintenance is opened (or set it here).'}
+                    </p>
+
+                    {resetForm ? (
+                        <form className="pin-form" onSubmit={handleResetPin}>
+                            <input
+                                type="password"
+                                autoFocus
+                                placeholder="Reset password"
+                                value={resetForm.password}
+                                onChange={(e) => setResetForm({ password: e.target.value })}
+                            />
+                            <button type="submit" className="btn-primary" disabled={!resetForm.password.trim()}>Reset PIN</button>
+                            <button type="button" className="btn-secondary" onClick={() => setResetForm(null)}>Cancel</button>
+                        </form>
+                    ) : pinForm ? (
+                        <form className="pin-form" onSubmit={handleSavePin}>
+                            {staffLockEnabled && (
+                                <input
+                                    type="password"
+                                    inputMode="numeric"
+                                    maxLength={6}
+                                    autoFocus
+                                    placeholder="Current PIN"
+                                    value={pinForm.current}
+                                    onChange={(e) => setPinForm({ ...pinForm, current: e.target.value.replace(/\D/g, '') })}
+                                />
+                            )}
+                            <input
+                                type="password"
+                                inputMode="numeric"
+                                maxLength={6}
+                                autoFocus={!staffLockEnabled}
+                                placeholder="New PIN (4-6 digits)"
+                                value={pinForm.pin}
+                                onChange={(e) => setPinForm({ ...pinForm, pin: e.target.value.replace(/\D/g, '') })}
+                            />
+                            <input
+                                type="password"
+                                inputMode="numeric"
+                                maxLength={6}
+                                placeholder="Enter PIN again"
+                                value={pinForm.confirm}
+                                onChange={(e) => setPinForm({ ...pinForm, confirm: e.target.value.replace(/\D/g, '') })}
+                            />
+                            <button type="submit" className="btn-primary">Save PIN</button>
+                            <button type="button" className="btn-secondary" onClick={() => setPinForm(null)}>Cancel</button>
+                        </form>
+                    ) : (
+                        <div className="print-language-options">
+                            <button type="button" className="print-language-option" onClick={() => setPinForm({ current: '', pin: '', confirm: '' })}>
+                                <i className="fas fa-key"></i> {staffLockEnabled ? 'Change PIN' : 'Set PIN'}
+                            </button>
+                            {staffLockEnabled && (
+                                <button type="button" className="print-language-option" onClick={() => setResetForm({ password: '' })}>
+                                    <i className="fas fa-rotate-left"></i> Reset PIN
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Food Item Grid Section */}
