@@ -185,6 +185,7 @@ async function initializeDatabase() {
         addColumnIfNotExists("items", "category TEXT DEFAULT 'Other'");
         addColumnIfNotExists("items", "image_path TEXT");
         addColumnIfNotExists("items", "is_active INTEGER DEFAULT 1");
+        addColumnIfNotExists("items", "name_hindi TEXT");
 
         // Table 2: bills - stores bill information
         ensureDb().exec(`
@@ -575,6 +576,7 @@ function addItem(
   price,
   imagePath = null,
   category = "Other",
+  nameHindi = null,
 ) {
   const database = ensureDb();
 
@@ -592,20 +594,20 @@ function addItem(
       database
         .prepare(`
           UPDATE items
-          SET name_tamil = ?, price = ?, image_path = ?, category = ?, is_active = 1
+          SET name_tamil = ?, name_hindi = ?, price = ?, image_path = ?, category = ?, is_active = 1
           WHERE id = ?
         `)
-        .run(nameTamil, price, imagePath, category, existing.id);
+        .run(nameTamil, nameHindi, price, imagePath, category, existing.id);
       return existing.id;
     }
   }
 
   // No existing item — insert fresh
   const stmt = database.prepare(`
-    INSERT INTO items (name_tamil, name_english, price, image_path, category, is_active)
-    VALUES (?, ?, ?, ?, ?, 1)
+    INSERT INTO items (name_tamil, name_english, name_hindi, price, image_path, category, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
   `);
-  const result = stmt.run(nameTamil, nameEnglish, price, imagePath, category);
+  const result = stmt.run(nameTamil, nameEnglish, nameHindi, price, imagePath, category);
   return result.lastInsertRowid;
 }
 
@@ -620,13 +622,37 @@ function updateItem(
   price,
   imagePath = null,
   category = "Other",
+  nameHindi = null,
 ) {
   const stmt = ensureDb().prepare(`
-    UPDATE items 
-    SET name_tamil = ?, name_english = ?, price = ?, image_path = ?, category = ?
+    UPDATE items
+    SET name_tamil = ?, name_english = ?, name_hindi = ?, price = ?, image_path = ?, category = ?
     WHERE id = ?
   `);
-  stmt.run(nameTamil, nameEnglish, price, imagePath, category, id);
+  stmt.run(nameTamil, nameEnglish, nameHindi, price, imagePath, category, id);
+}
+
+/**
+ * Read a value from app_settings
+ * Used by: Admin Page / Print Preview (e.g. default bill print language)
+ */
+function getSetting(key, defaultValue = null) {
+  const row = ensureDb()
+    .prepare("SELECT value FROM app_settings WHERE key = ?")
+    .get(key);
+  return row ? row.value : defaultValue;
+}
+
+/**
+ * Save a value to app_settings (insert or overwrite)
+ */
+function setSetting(key, value) {
+  ensureDb()
+    .prepare(`
+      INSERT INTO app_settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `)
+    .run(key, value);
 }
 
 /**
@@ -814,6 +840,7 @@ function getBillItems(billId) {
       i.id,
       i.name_tamil,
       i.name_english,
+      i.name_hindi,
       i.image_path
     FROM bill_items bi
     JOIN items i ON bi.item_id = i.id
@@ -2232,6 +2259,9 @@ module.exports = {
   updateItem,
   toggleItemStatus,
   deleteItem,
+  // Settings functions
+  getSetting,
+  setSetting,
   saveBill,
   updateBill,
   deleteBill,

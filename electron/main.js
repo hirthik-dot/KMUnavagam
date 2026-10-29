@@ -260,9 +260,9 @@ function setupIPCHandlers() {
   });
 
   // Add new item
-  ipcMain.handle('db:addItem', async (event, nameTamil, nameEnglish, price, imagePath, category) => {
+  ipcMain.handle('db:addItem', async (event, nameTamil, nameEnglish, price, imagePath, category, nameHindi) => {
     try {
-      return db.addItem(nameTamil, nameEnglish, price, imagePath, category);
+      return db.addItem(nameTamil, nameEnglish, price, imagePath, category, nameHindi);
     } catch (error) {
       console.error('Error adding item:', error);
       throw error;
@@ -270,12 +270,33 @@ function setupIPCHandlers() {
   });
 
   // Update item
-  ipcMain.handle('db:updateItem', async (event, id, nameTamil, nameEnglish, price, imagePath, category) => {
+  ipcMain.handle('db:updateItem', async (event, id, nameTamil, nameEnglish, price, imagePath, category, nameHindi) => {
     try {
-      db.updateItem(id, nameTamil, nameEnglish, price, imagePath, category);
+      db.updateItem(id, nameTamil, nameEnglish, price, imagePath, category, nameHindi);
       return { success: true };
     } catch (error) {
       console.error('Error updating item:', error);
+      throw error;
+    }
+  });
+
+  // Get an app setting (e.g. default bill print language)
+  ipcMain.handle('db:getSetting', async (event, key, defaultValue) => {
+    try {
+      return db.getSetting(key, defaultValue);
+    } catch (error) {
+      console.error('Error getting setting:', error);
+      throw error;
+    }
+  });
+
+  // Save an app setting
+  ipcMain.handle('db:setSetting', async (event, key, value) => {
+    try {
+      db.setSetting(key, value);
+      return { success: true };
+    } catch (error) {
+      console.error('Error saving setting:', error);
       throw error;
     }
   });
@@ -1062,7 +1083,7 @@ function setupIPCHandlers() {
  * Generate HTML for thermal receipt printing
  */
 function generateBillHTML(billData) {
-  const { billNumber, items, total, hotelName, address, fssai, license, phone, email, dateTime, supplierName } = billData;
+  const { billNumber, items, total, hotelName, address, fssai, license, phone, email, dateTime, supplierName, printLanguage } = billData;
 
   // Calculate total quantity
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -1347,7 +1368,7 @@ function generateBillHTML(billData) {
         <tbody>
           ${items.map(item => `
             <tr>
-              <td class="item">${item.name_tamil || item.name_english}</td>
+              <td class="item">${getItemPrintName(item, printLanguage)}</td>
               <td class="qty">${item.quantity}</td>
               <td class="rate">${item.price.toFixed(0)}</td>
               <td class="total">${(item.price * item.quantity).toFixed(0)}</td>
@@ -1390,7 +1411,7 @@ function generateBillHTML(billData) {
  * Generate HTML for KOT (Staff Only)
  */
 function generateKOTHTML(billData) {
-  const { billNumber, items, dateTime, supplierName } = billData;
+  const { billNumber, items, dateTime, supplierName, printLanguage } = billData;
 
   return `
     <!DOCTYPE html>
@@ -1544,7 +1565,7 @@ function generateKOTHTML(billData) {
         <tbody>
           ${items.map(item => `
             <tr>
-              <td class="item">${item.name_tamil || item.name_english}</td>
+              <td class="item">${getItemPrintName(item, printLanguage)}</td>
               <td class="qty">${item.quantity}</td>
             </tr>
           `).join('')}

@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader';
 import Toast from '../components/Toast';
 import SupplierModal from '../components/SupplierModal';
 import { getTodayLocaleDate } from '../utils/DateUtils';
+import { DISPLAY_LANGUAGE_SETTING_KEY, DEFAULT_DISPLAY_LANGUAGE } from '../utils/itemLanguage';
 import './BillingPage.css';
 
 function BillingPage({ onNavigate, creditCustomer }) {
@@ -23,12 +24,16 @@ function BillingPage({ onNavigate, creditCustomer }) {
     const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [toast, setToast] = useState(null);
     const [billDate, setBillDate] = useState(getTodayLocaleDate());
+    const [displayLanguage, setDisplayLanguage] = useState(DEFAULT_DISPLAY_LANGUAGE);
 
     // Load food items and categories when component mounts
     useEffect(() => {
         loadFoodItems();
         loadCategories();
         loadSuppliers();
+        window.electronAPI.getSetting(DISPLAY_LANGUAGE_SETTING_KEY, DEFAULT_DISPLAY_LANGUAGE)
+            .then((lang) => setDisplayLanguage(lang || DEFAULT_DISPLAY_LANGUAGE))
+            .catch((err) => console.error('Error loading display language:', err));
     }, []);
 
     // Pre-fill cart if editing mode
@@ -60,7 +65,8 @@ function BillingPage({ onNavigate, creditCustomer }) {
             filtered = filtered.filter(
                 (item) =>
                     item.name_english.toLowerCase().includes(query) ||
-                    item.name_tamil.includes(query)
+                    item.name_tamil.includes(query) ||
+                    (item.name_hindi && item.name_hindi.includes(query))
             );
         }
 
@@ -347,6 +353,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
                                         onUpdateQuantity={updateQuantity}
                                         isInCart={!!cartItem}
                                         quantity={cartItem ? cartItem.quantity : 0}
+                                        displayLanguage={displayLanguage}
                                     />
                                 );
                             })}
@@ -363,6 +370,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
                         total={calculateTotal()}
                         onPrint={handlePrintBill}
                         className={isBannerActive ? 'with-banner' : ''}
+                        displayLanguage={displayLanguage}
                     />
                 </div>
             </div>

@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import PageHeader from '../components/PageHeader';
 import Toast from '../components/Toast';
+import {
+    PRINT_LANGUAGES,
+    PRINT_LANGUAGE_SETTING_KEY,
+    DEFAULT_PRINT_LANGUAGE,
+    getItemPrintName,
+} from '../utils/itemLanguage';
 import './PrintPreviewPage.css';
 
 /**
@@ -133,7 +139,8 @@ function PrintPreviewPage({ onNavigate, billData }) {
             // Update bill number
             const finalBillData = {
                 ...billData,
-                billNumber: finalBillId.toString().padStart(4, '0')
+                billNumber: billId.toString().padStart(4, '0'),
+                printLanguage
             };
 
             // Print KOT silently
@@ -295,6 +302,19 @@ function PrintPreviewPage({ onNavigate, billData }) {
             
             <div className="preview-header">
                 <h1>🖨️ Print Preview</h1>
+                <div className="language-toggle" role="group" aria-label="Bill print language">
+                    <span className="language-toggle-label">Print in:</span>
+                    {PRINT_LANGUAGES.map((lang) => (
+                        <button
+                            key={lang.code}
+                            className={`language-btn ${printLanguage === lang.code ? 'active' : ''}`}
+                            onClick={() => setPrintLanguage(lang.code)}
+                            disabled={isPrinting}
+                        >
+                            {lang.label}
+                        </button>
+                    ))}
+                </div>
                 <div className="header-actions">
                     <button className="cancel-btn" onClick={handleBackToBilling} disabled={isPrinting}>
                         CANCEL
@@ -351,7 +371,7 @@ function PrintPreviewPage({ onNavigate, billData }) {
                                 <tbody>
                                     {items.map((item, idx) => (
                                         <tr key={idx}>
-                                            <td className="col-item">{item.name_tamil || item.name_english}</td>
+                                            <td className="col-item">{getItemPrintName(item, printLanguage)}</td>
                                             <td className="right col-qty">{item.quantity}</td>
                                             <td className="right col-total">{(item.price * item.quantity).toFixed(0)}</td>
                                         </tr>
@@ -387,7 +407,7 @@ function PrintPreviewPage({ onNavigate, billData }) {
                                 <tbody>
                                     {items.map((item, idx) => (
                                         <tr key={idx}>
-                                            <td className="bold col-item">{item.name_tamil || item.name_english}</td>
+                                            <td className="bold col-item">{getItemPrintName(item, printLanguage)}</td>
                                             <td className="right bold col-qty">{item.quantity}</td>
                                         </tr>
                                     ))}

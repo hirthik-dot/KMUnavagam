@@ -210,6 +210,7 @@ function RecordsPage({ onNavigate }) {
                 id: item.item_id || item.id,
                 item_id: item.item_id || item.id,
                 name_tamil: item.name_tamil,
+                name_hindi: item.name_hindi,
                 name_english: item.name_english,
                 price: item.rate,
                 quantity: item.quantity,

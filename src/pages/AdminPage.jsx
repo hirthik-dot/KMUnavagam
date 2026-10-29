@@ -3,6 +3,13 @@ import PageHeader from '../components/PageHeader';
 import Toast from '../components/Toast';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Footer from '../components/Footer';
+import {
+    PRINT_LANGUAGES,
+    PRINT_LANGUAGE_SETTING_KEY,
+    DEFAULT_PRINT_LANGUAGE,
+    DISPLAY_LANGUAGE_SETTING_KEY,
+    DEFAULT_DISPLAY_LANGUAGE,
+} from '../utils/itemLanguage';
 import './AdminPage.css';
 
 function AdminPage({ onNavigate }) {
@@ -21,11 +28,14 @@ function AdminPage({ onNavigate }) {
     const [categoryFilter, setCategoryFilter] = useState('All');
     const [toast, setToast] = useState(null);
     const [confirmDialog, setConfirmDialog] = useState(null);
+    const [printLanguage, setPrintLanguage] = useState(DEFAULT_PRINT_LANGUAGE);
+    const [displayLanguage, setDisplayLanguage] = useState(DEFAULT_DISPLAY_LANGUAGE);
 
     // Form state for NEW item
     const [formData, setFormData] = useState({
         nameTamil: '',
         nameEnglish: '',
+        nameHindi: '',
         price: '',
         category: 'Other',
         imagePath: '',
@@ -35,6 +45,7 @@ function AdminPage({ onNavigate }) {
     const [editFormData, setEditFormData] = useState({
         nameTamil: '',
         nameEnglish: '',
+        nameHindi: '',
         price: '',
         category: 'Other',
         imagePath: '',
@@ -47,6 +58,47 @@ function AdminPage({ onNavigate }) {
         loadSuppliers();
     }, []);
 
+    /**
+     * Load default bill print language and screen display language
+     */
+    async function loadLanguageSettings() {
+        try {
+            const printLang = await window.electronAPI.getSetting(PRINT_LANGUAGE_SETTING_KEY, DEFAULT_PRINT_LANGUAGE);
+            setPrintLanguage(printLang || DEFAULT_PRINT_LANGUAGE);
+            const displayLang = await window.electronAPI.getSetting(DISPLAY_LANGUAGE_SETTING_KEY, DEFAULT_DISPLAY_LANGUAGE);
+            setDisplayLanguage(displayLang || DEFAULT_DISPLAY_LANGUAGE);
+        } catch (error) {
+            console.error('Error loading language settings:', error);
+        }
+    }
+
+    /**
+     * Save screen display language (item names on Billing page and Cart)
+     */
+    async function handleDisplayLanguageChange(lang) {
+        try {
+            await window.electronAPI.setSetting(DISPLAY_LANGUAGE_SETTING_KEY, lang);
+            setDisplayLanguage(lang);
+            showToast('Display language saved!');
+        } catch (error) {
+            console.error('Error saving display language:', error);
+            showToast('Failed to save display language.', 'error');
+        }
+    }
+
+    /**
+     * Save default bill print language
+     */
+    async function handlePrintLanguageChange(lang) {
+        try {
+            await window.electronAPI.setSetting(PRINT_LANGUAGE_SETTING_KEY, lang);
+            setPrintLanguage(lang);
+            showToast('Default print language saved!');
+        } catch (error) {
+            console.error('Error saving print language:', error);
+            showToast('Failed to save print language.', 'error');
+        }
+    }
 
     /**
      * Load all food items (including inactive ones)
@@ -301,7 +353,8 @@ function AdminPage({ onNavigate }) {
                 formData.nameEnglish,
                 price,
                 formData.imagePath || null,
-                formData.category
+                formData.category,
+                formData.nameHindi.trim() || null
             );
             showToast('Item added successfully!');
 
@@ -309,6 +362,7 @@ function AdminPage({ onNavigate }) {
             setFormData({
                 nameTamil: '',
                 nameEnglish: '',
+                nameHindi: '',
                 price: '',
                 category: 'Other',
                 imagePath: '',
@@ -352,7 +406,8 @@ function AdminPage({ onNavigate }) {
                 editFormData.nameEnglish,
                 price,
                 editFormData.imagePath || null,
-                editFormData.category
+                editFormData.category,
+                editFormData.nameHindi.trim() || null
             );
             showToast('Item updated successfully!');
             setEditingItem(null);
@@ -371,6 +426,7 @@ function AdminPage({ onNavigate }) {
         setEditFormData({
             nameTamil: item.name_tamil,
             nameEnglish: item.name_english,
+            nameHindi: item.name_hindi || '',
             price: item.price.toString(),
             category: item.category || 'Other',
             imagePath: item.image_path || '',
@@ -385,6 +441,7 @@ function AdminPage({ onNavigate }) {
         setFormData({
             nameTamil: '',
             nameEnglish: '',
+            nameHindi: '',
             price: '',
             category: 'Other',
             imagePath: '',
@@ -433,6 +490,8 @@ function AdminPage({ onNavigate }) {
             onCancel: () => setConfirmDialog(null)
         });
     }
+
+    const missingHindiCount = items.filter(item => item.is_active && !item.name_hindi).length;
 
     // Filter items based on category selection
     const filteredItems = categoryFilter === 'All'
@@ -483,6 +542,18 @@ function AdminPage({ onNavigate }) {
                                 onChange={(e) => setFormData({ ...formData, nameEnglish: e.target.value })}
                                 placeholder="Dosa"
                                 required
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="nameHindi">Hindi Name (Optional)</label>
+                            <input
+                                type="text"
+                                id="nameHindi"
+                                name="nameHindi"
+                                value={formData.nameHindi}
+                                onChange={(e) => setFormData({ ...formData, nameHindi: e.target.value })}
+                                placeholder="डोसा"
                             />
                         </div>
 
@@ -787,6 +858,9 @@ function AdminPage({ onNavigate }) {
                                     <div className="item-info">
                                         <h3 className="item-name-tamil">{item.name_tamil}</h3>
                                         <p className="item-name-english">{item.name_english}</p>
+                                        {item.name_hindi && (
+                                            <p className="item-name-english">{item.name_hindi}</p>
+                                        )}
                                         <p className="item-price">₹{item.price.toFixed(2)}</p>
                                         <p className="item-category">
                                             <i className="fas fa-tag"></i> {item.category || 'Other'}
@@ -863,6 +937,18 @@ function AdminPage({ onNavigate }) {
                                     value={editFormData.nameEnglish}
                                     onChange={handleEditInputChange}
                                     required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label htmlFor="edit-nameHindi">Hindi Name (Optional)</label>
+                                <input
+                                    type="text"
+                                    id="edit-nameHindi"
+                                    name="nameHindi"
+                                    value={editFormData.nameHindi}
+                                    onChange={handleEditInputChange}
+                                    placeholder="डोसा"
                                 />
                             </div>
 
