@@ -62,13 +62,23 @@ function App() {
         return <CreditsPage onNavigate={handleNavigate} navData={navData} />;
 
       case 'credit-details':
-        return <CreditDetailsPage onNavigate={handleNavigate} customerId={navData} />;
+        // navData is the customer id, or { customerId, summaryRange } when returning from Summary Preview
+        return (
+          <CreditDetailsPage
+            onNavigate={handleNavigate}
+            customerId={navData?.customerId ?? navData}
+            summaryRange={navData?.summaryRange}
+          />
+        );
 
       case 'staff':
         return <StaffPage onNavigate={handleNavigate} />;
 
       case 'print-preview':
         return <PrintPreviewPage onNavigate={handleNavigate} billData={navData} />;
+
+      case 'summary-preview':
+        return <SummaryPreviewPage onNavigate={handleNavigate} previewData={navData} />;
 
       default:
         return <HomePage onNavigate={handleNavigate} />;

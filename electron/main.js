@@ -5,6 +5,7 @@ const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
+const creditStatementExport = require('./creditStatementExport');
 
 // Force dd/mm/yyyy date format by setting locale
 app.commandLine.appendSwitch('lang', 'en-GB');
@@ -916,6 +917,11 @@ function setupIPCHandlers() {
     });
   });
 
+  // PREVIEW CREDIT SUMMARY - returns the exact HTML that print:creditSummary sends to the printer
+  ipcMain.handle('print:creditSummaryPreview', async (event, data) => {
+    return generateCreditSummaryHTML(data);
+  });
+
   // PRINT CREDIT SUMMARY SILENTLY
   ipcMain.handle('print:creditSummary', async (event, data) => {
     console.log(`🖨️ Printing Credit Summary for: ${data.customerName}`);
@@ -1077,6 +1083,57 @@ function setupIPCHandlers() {
       throw error;
     }
   });
+
+  // Export a credit customer's statement for a date range as PDF or Excel (format: 'pdf' | 'xlsx')
+  ipcMain.handle('export:creditStatement', async (event, customerId, startDate, endDate, format) => {
+    try {
+      const statement = db.getCreditStatement(customerId, startDate, endDate);
+      const isPdf = format === 'pdf';
+
+      const { filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: isPdf ? 'Save Statement as PDF' : 'Save Statement as Excel',
+        defaultPath: path.join(
+          app.getPath('documents'),
+          `${creditStatementExport.defaultFileName(statement)}.${isPdf ? 'pdf' : 'xlsx'}`
+        ),
+        filters: isPdf
+          ? [{ name: 'PDF Document', extensions: ['pdf'] }]
+          : [{ name: 'Excel Workbook', extensions: ['xlsx'] }]
+      });
+
+      if (!filePath) return { success: false };
+
+      if (isPdf) {
+        await creditStatementExport.writeStatementPDF(statement, filePath);
+      } else {
+        await creditStatementExport.writeStatementExcel(statement, filePath);
+      }
+      return { success: true, path: filePath };
+    } catch (error) {
+      console.error('Export statement error:', error);
+      throw error;
+    }
+  });
+}
+
+/**
+ * Printed amount: whole rupees as "40" (same as before), otherwise exactly 2 decimals "12.50".
+ * Keep in sync with formatMoney in src/utils/money.js
+ */
+function formatMoney(value) {
+  const amount = Math.round((Number(value) || 0) * 100) / 100;
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+}
+
+/**
+ * Pick the item name to print for the chosen language ('ta' | 'en' | 'hi').
+ * Falls back to English when the item has no name in that language.
+ * Default ('ta') keeps the original behaviour: Tamil, else English.
+ */
+function getItemPrintName(item, language) {
+  if (language === 'en') return item.name_english;
+  if (language === 'hi') return item.name_hindi || item.name_english;
+  return item.name_tamil || item.name_english;
 }
 
 /**

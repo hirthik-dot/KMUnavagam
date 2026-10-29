@@ -140,6 +140,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     printCreditSummary: (data) =>
         ipcRenderer.invoke('print:creditSummary', data),
 
+    // Save a credit customer's statement for a date range (format: 'pdf' | 'xlsx')
+    exportCreditStatement: (customerId, startDate, endDate, format) =>
+        ipcRenderer.invoke('export:creditStatement', customerId, startDate, endDate, format),
+
+    // Get the exact HTML of the credit summary slip (for preview before printing)
+    previewCreditSummary: (data) =>
+        ipcRenderer.invoke('print:creditSummaryPreview', data),
+
     // ========== VENDOR SYSTEM ==========
     getAllVendors: () => ipcRenderer.invoke('db:getAllVendors'),
     addVendor: (name, phone) => ipcRenderer.invoke('db:addVendor', name, phone),

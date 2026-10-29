@@ -11,7 +11,7 @@ import './CreditDetailsPage.css';
  * Shows transaction history for a specific customer
  * Allows recording payments
  */
-function CreditDetailsPage({ onNavigate, customerId }) {
+function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
     const [customer, setCustomer] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -29,13 +29,15 @@ function CreditDetailsPage({ onNavigate, customerId }) {
     const [isBillLoading, setIsBillLoading] = useState(false);
 
     // For Summary Bill Range
-    const [showSummaryModal, setShowSummaryModal] = useState(false);
+    // summaryRange is set when coming back from Summary Preview ("Change Dates"): reopen with the same range
+    const [showSummaryModal, setShowSummaryModal] = useState(!!summaryRange);
     const [summaryStartDate, setSummaryStartDate] = useState(() => {
+        if (summaryRange?.start) return summaryRange.start;
         const d = new Date();
         d.setDate(d.getDate() - 7);
         return d.toISOString().split('T')[0];
     });
-    const [summaryEndDate, setSummaryEndDate] = useState(getTodayLocaleDate());
+    const [summaryEndDate, setSummaryEndDate] = useState(summaryRange?.end || getTodayLocaleDate());
     const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
     useEffect(() => {
@@ -121,13 +123,14 @@ function CreditDetailsPage({ onNavigate, customerId }) {
         }
     };
 
-    const handlePrintSummary = async (e) => {
+    // Load bills for the range and open the Summary Preview page (printing happens there)
+    const handlePreviewSummary = async (e) => {
         e.preventDefault();
         setIsSummaryLoading(true);
         try {
             const billsInPeriod = await window.electronAPI.getBillsByDateRange(
-                customer.id, 
-                summaryStartDate, 
+                customer.id,
+                summaryStartDate,
                 summaryEndDate
             );
 
@@ -144,13 +147,15 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                 endDate: formatToDisplayDate(summaryEndDate),
                 bills: billsInPeriod,
                 total: total
+            };
+            onNavigate('summary-preview', {
+                customerId: customer.id,
+                summaryRange: { start: summaryStartDate, end: summaryEndDate },
+                data
             });
-
-            setToast({ message: '✅ Summary bill sent to printer', type: 'success' });
-            setShowSummaryModal(false);
         } catch (error) {
-            console.error('Error printing summary:', error);
-            setToast({ message: 'Failed to print summary bill', type: 'error' });
+            console.error('Error preparing summary preview:', error);
+            setToast({ message: 'Failed to load summary preview', type: 'error' });
         } finally {
             setIsSummaryLoading(false);
         }
@@ -345,7 +350,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                         <p style={{ marginBottom: '15px', color: '#666', fontSize: '14px' }}>
                             Choose a date range to list all total bill amounts per day for <strong>{customer.name}</strong>.
                         </p>
-                        <form onSubmit={handlePrintSummary}>
+                        <form onSubmit={handlePreviewSummary}>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>From Date</label>
@@ -369,7 +374,7 @@ function CreditDetailsPage({ onNavigate, customerId }) {
                             <div className="modal-actions">
                                 <button type="button" className="cancel-btn" onClick={() => setShowSummaryModal(false)}>Cancel</button>
                                 <button type="submit" className="save-btn" disabled={isSummaryLoading}>
-                                    <i className="fa-solid fa-print"></i> {isSummaryLoading ? 'Printing...' : 'Print Summary'}
+                                    <i className="fa-solid fa-eye"></i> {isSummaryLoading ? 'Loading...' : 'Preview'}
                                 </button>
                             </div>
                         </form>

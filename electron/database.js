@@ -1507,6 +1507,76 @@ function getBillsByDateRange(customerId, startDate, endDate) {
   return stmt.all(customerId, startDate, endDate);
 }
 
+/**
+ * Full credit statement for a customer over a date range (YYYY-MM-DD, inclusive)
+ * Used by: PDF / Excel export on the Summary Preview page
+ * Opening balance = all credit bills minus all payments BEFORE startDate.
+ */
+function getCreditStatement(customerId, startDate, endDate) {
+  const database = ensureDb();
+
+  const customer = database
+    .prepare("SELECT id, name, phone FROM credit_customers WHERE id = ?")
+    .get(customerId);
+  if (!customer) throw new Error("Customer not found");
+
+  const billedBefore = database.prepare(`
+    SELECT COALESCE(SUM(b.total_amount), 0) as total
+    FROM bills b
+    JOIN credit_bills cb ON b.id = cb.bill_id
+    WHERE cb.customer_id = ? AND DATE(b.created_at) < ?
+  `).get(customerId, startDate).total;
+
+  const paidBefore = database.prepare(`
+    SELECT COALESCE(SUM(amount), 0) as total
+    FROM credit_payments
+    WHERE customer_id = ? AND date < ?
+  `).get(customerId, startDate).total;
+
+  const bills = database.prepare(`
+    SELECT b.id, b.created_at, DATE(b.created_at) as bill_date, b.total_amount
+    FROM bills b
+    JOIN credit_bills cb ON b.id = cb.bill_id
+    WHERE cb.customer_id = ?
+      AND DATE(b.created_at) >= ? AND DATE(b.created_at) <= ?
+    ORDER BY b.created_at ASC, b.id ASC
+  `).all(customerId, startDate, endDate);
+
+  const itemsStmt = database.prepare(`
+    SELECT i.name_english, i.name_tamil, bi.quantity, bi.rate
+    FROM bill_items bi
+    JOIN items i ON bi.item_id = i.id
+    WHERE bi.bill_id = ?
+  `);
+  for (const bill of bills) {
+    bill.items = itemsStmt.all(bill.id);
+  }
+
+  const payments = database.prepare(`
+    SELECT id, date, amount
+    FROM credit_payments
+    WHERE customer_id = ? AND date >= ? AND date <= ?
+    ORDER BY date ASC, id ASC
+  `).all(customerId, startDate, endDate);
+
+  const totalBilled = bills.reduce((sum, b) => sum + b.total_amount, 0);
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const openingBalance = billedBefore - paidBefore;
+
+  return {
+    customer,
+    startDate,
+    endDate,
+    openingBalance,
+    bills,
+    payments,
+    dailyTotals: getBillsByDateRange(customerId, startDate, endDate),
+    totalBilled,
+    totalPaid,
+    closingBalance: openingBalance + totalBilled - totalPaid,
+  };
+}
+
 // ========================================
 // CATEGORY MANAGEMENT FUNCTIONS
 // ========================================
