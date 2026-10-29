@@ -22,6 +22,13 @@ function BillingPage({ onNavigate, creditCustomer }) {
     const [categories, setCategories] = useState([{ id: 0, name: 'All' }]);
     const [suppliers, setSuppliers] = useState([]);
     const [showSupplierModal, setShowSupplierModal] = useState(false);
+    // Staff picked for this bill before going to preview (pre-selected when coming back)
+    const [lastSupplierId, setLastSupplierId] = useState(null);
+    // When editing a bill whose staff is no longer active serving staff, they stay selectable
+    // (otherwise the edit would move the sale to someone else or clear the staff)
+    const [originalStaff, setOriginalStaff] = useState(null);
+    // Where to go after editing a bill: { page, data } (e.g. the credit customer page), default Records
+    const [editReturnTo, setEditReturnTo] = useState(null);
     const [toast, setToast] = useState(null);
     const [billDate, setBillDate] = useState(getTodayLocaleDate());
     const [displayLanguage, setDisplayLanguage] = useState(DEFAULT_DISPLAY_LANGUAGE);
@@ -36,17 +43,25 @@ function BillingPage({ onNavigate, creditCustomer }) {
             .catch((err) => console.error('Error loading display language:', err));
     }, []);
 
-    // Pre-fill cart if editing mode
+    // Pre-fill cart when editing a bill or coming back from Print Preview
     useEffect(() => {
-        if (creditCustomer?.editMode && creditCustomer?.cart) {
+        if (creditCustomer?.cart) {
             setCart(creditCustomer.cart);
-            setEditMode(true);
-            setOriginalBillId(creditCustomer.originalBillId);
+            if (creditCustomer.editMode) {
+                setEditMode(true);
+                setOriginalBillId(creditCustomer.originalBillId);
+                setEditReturnTo(creditCustomer.returnTo || null);
+            }
             if (creditCustomer.billDate) {
                 setBillDate(creditCustomer.billDate);
             }
         }
     }, [creditCustomer]);
+
+    // Staff shown in the picker: active serving staff, plus the edited bill's original staff if missing
+    const pickerSuppliers = originalStaff && !suppliers.some((s) => s.id === originalStaff.id)
+        ? [...suppliers, { ...originalStaff, label: `${originalStaff.name} (this bill's staff)` }]
+        : suppliers;
 
     // Filter items when search query or category changes
     useEffect(() => {
@@ -196,7 +211,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
         }
 
         // If no suppliers are added, skip modal and go straight to preview
-        if (suppliers.length === 0) {
+        if (pickerSuppliers.length === 0) {
             confirmPrintWithSupplier(null);
         } else {
             setShowSupplierModal(true);
@@ -241,7 +256,8 @@ function BillingPage({ onNavigate, creditCustomer }) {
             supplierName: supplier?.name || null,
             billNumber: editMode ? originalBillId : 'PENDING',
             editMode: editMode,
-            originalBillId: originalBillId
+            originalBillId: originalBillId,
+            returnTo: editReturnTo
         };
 
         // Navigate to preview page
@@ -257,18 +273,21 @@ function BillingPage({ onNavigate, creditCustomer }) {
         );
     }
 
-    const isBannerActive = editMode || creditCustomer;
+    // Credit bill only when a credit customer id is present (navData is also used to restore a cash bill's cart)
+    const isCreditBill = !!creditCustomer?.creditCustomerId;
+    const isBannerActive = editMode || isCreditBill;
 
     return (
         <div className={`billing-page ${isBannerActive ? 'with-banner' : ''}`}>
             <PageHeader
-                onNavigate={onNavigate}
-                backTo={editMode ? 'records' : (creditCustomer ? 'credits' : 'home')}
+                onNavigate={editMode && editReturnTo ? () => onNavigate(editReturnTo.page, editReturnTo.data) : onNavigate}
+                backTo={editMode ? 'records' : (isCreditBill ? 'credits' : 'home')}
             />
 
             {showSupplierModal && (
                 <SupplierModal
-                    suppliers={suppliers}
+                    suppliers={pickerSuppliers}
+                    initialSupplierId={lastSupplierId}
                     onSelect={confirmPrintWithSupplier}
                     onCancel={() => setShowSupplierModal(false)}
                 />
@@ -290,7 +309,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
             )}
 
             {/* Credit Customer Banner */}
-            {creditCustomer && !editMode && (
+            {isCreditBill && !editMode && (
                 <div className="credit-banner">
                     <p><i className="fa-solid fa-file-pen"></i> Billing for Credit Customer: <strong>{creditCustomer.customerName}</strong></p>
                     <div className="banner-date-picker">
@@ -327,7 +346,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
             {/* Main Content */}
             <div className="billing-content">
                 {/* Food Items Grid (Left 2/3) */}
-                <div className={`food-items-section ${(creditCustomer || editMode) ? 'with-banner' : ''}`}>
+                <div className={`food-items-section ${(isCreditBill || editMode) ? 'with-banner' : ''}`}>
                     {filteredItems.length === 0 ? (
                         <div className="no-items">
                             <p>No food items found.</p>

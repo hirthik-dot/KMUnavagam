@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import PageHeader from '../components/PageHeader';
 import Toast from '../components/Toast';
 import {
@@ -8,6 +8,7 @@ import {
     getItemPrintName,
 } from '../utils/itemLanguage';
 import './PrintPreviewPage.css';
+import { formatMoney } from '../utils/money';
 
 /**
  * PRINT PREVIEW PAGE
@@ -18,6 +19,19 @@ function PrintPreviewPage({ onNavigate, billData }) {
     const [isPrinting, setIsPrinting] = useState(false);
     const [toast, setToast] = useState(null);
     const [previewBillNumber, setPreviewBillNumber] = useState(billData?.billNumber);
+    // Per-bill language override; starts from the default saved in Admin settings
+    const [printLanguage, setPrintLanguage] = useState(DEFAULT_PRINT_LANGUAGE);
+    // Id of the bill this preview has already saved (a NEW bill is saved at most once, even if printing fails)
+    const savedBillIdRef = useRef(null);
+    const [savedBillId, setSavedBillId] = useState(null);
+    // Synchronous guard: a double click fires twice before React re-renders the disabled buttons
+    const actionInFlightRef = useRef(false);
+
+    useEffect(() => {
+        window.electronAPI.getSetting(PRINT_LANGUAGE_SETTING_KEY, DEFAULT_PRINT_LANGUAGE)
+            .then((lang) => setPrintLanguage(lang || DEFAULT_PRINT_LANGUAGE))
+            .catch((err) => console.error('Error loading print language:', err));
+    }, []);
 
     useEffect(() => {
         const fetchNextId = async () => {
@@ -47,251 +61,142 @@ function PrintPreviewPage({ onNavigate, billData }) {
     const { items, total, dateTime, customerName, supplierName } = billData;
 
     /**
-     * Handle Print Bill Only
+     * Save the bill once: edits update the original bill, new bills are inserted only on the first attempt.
+     * Retrying after a print failure (or a second click) re-uses the saved bill instead of creating a duplicate.
      */
-    const handlePrintBill = async () => {
-        setIsPrinting(true);
-        try {
-            let finalBillId;
-
-            // Check if editing existing bill or creating new one
-            if (billData.editMode && billData.originalBillId) {
-                // UPDATE existing bill
-                await window.electronAPI.updateBill(
-                    billData.originalBillId,
-                    items,
-                    total,
-                    billData.supplierId || null,
-                    billData.billDate || null
-                );
-                finalBillId = billData.originalBillId;
-            } else {
-                // CREATE new bill
-                finalBillId = await window.electronAPI.saveBill(
-                    items,
-                    total,
-                    billData.creditCustomerId || null,
-                    billData.supplierId || null,
-                    billData.billDate || null
-                );
-            }
-
-            // Update bill number with real ID
-            const finalBillData = {
-                ...billData,
-                billNumber: finalBillId.toString().padStart(4, '0')
-            };
-
-            // Print silently
-            await window.electronAPI.printSilent(finalBillData, 'BILL');
-
-            // Navigate back
-            const successMsg = billData.editMode ? 'Bill Updated & Reprinted!' : 'Bill Printed Successfully!';
-            setToast({ message: successMsg, type: 'success' });
-            setTimeout(() => {
-                if (billData.editMode) {
-                    onNavigate('records');
-                } else if (billData.creditCustomerId) {
-                    // Return to credit details for that specific customer
-                    onNavigate('credit-details', billData.creditCustomerId);
-                } else {
-                    onNavigate('billing');
-                }
-            }, 1000);
-        } catch (error) {
-            console.error('Print Error:', error);
-            setToast({ message: 'Printing Failed: ' + error.message, type: 'error' });
-        } finally {
-            setIsPrinting(false);
+    const saveBillOnce = async () => {
+        if (billData.editMode && billData.originalBillId) {
+            await window.electronAPI.updateBill(
+                billData.originalBillId,
+                items,
+                total,
+                billData.supplierId || null,
+                billData.billDate || null
+            );
+            return billData.originalBillId;
         }
+        if (savedBillIdRef.current) return savedBillIdRef.current;
+
+        const newId = await window.electronAPI.saveBill(
+            items,
+            total,
+            billData.creditCustomerId || null,
+            billData.supplierId || null,
+            billData.billDate || null
+        );
+        savedBillIdRef.current = newId;
+        setSavedBillId(newId);
+        return newId;
     };
 
     /**
-     * Handle Print KOT Only
+     * Save, then print the requested copies, then leave the page.
+     * Buttons stay disabled after success (until navigation) so a quick second click can't act again.
      */
-    const handlePrintKOTOnly = async () => {
+    const runAction = async ({ print = [], successMsg, failMsg, delay }) => {
+        if (actionInFlightRef.current) return;
+        actionInFlightRef.current = true;
         setIsPrinting(true);
+        let billId = null;
         try {
-            let finalBillId;
+            billId = await saveBillOnce();
 
-            // Check if editing existing bill or creating new one
-            if (billData.editMode && billData.originalBillId) {
-                // UPDATE existing bill
-                await window.electronAPI.updateBill(
-                    billData.originalBillId,
-                    items,
-                    total,
-                    billData.supplierId || null,
-                    billData.billDate || null
-                );
-                finalBillId = billData.originalBillId;
-            } else {
-                // CREATE new bill
-                finalBillId = await window.electronAPI.saveBill(
-                    items,
-                    total,
-                    billData.creditCustomerId || null,
-                    billData.supplierId || null,
-                    billData.billDate || null
-                );
-            }
-
-            // Update bill number
             const finalBillData = {
                 ...billData,
                 billNumber: billId.toString().padStart(4, '0'),
                 printLanguage
             };
-
-            // Print KOT silently
-            await window.electronAPI.printSilent(finalBillData, 'KOT');
-
-            const successMsg = billData.editMode ? 'Bill Updated & KOT Reprinted!' : 'KOT Printed Successfully!';
-            setToast({ message: successMsg, type: 'success' });
-            setTimeout(() => {
-                if (billData.editMode) {
-                    onNavigate('records');
-                } else if (billData.creditCustomerId) {
-                    onNavigate('credit-details', billData.creditCustomerId);
-                } else {
-                    onNavigate('billing');
-                }
-            }, 1000);
-        } catch (error) {
-            console.error('Print Error:', error);
-            setToast({ message: 'KOT Printing Failed: ' + error.message, type: 'error' });
-        } finally {
-            setIsPrinting(false);
-        }
-    };
-
-    /**
-     * Handle Print KOT + Bill
-     */
-    /**
-     * Handle Save Bill Only (No Printing)
-     */
-    const handleSaveBillOnly = async () => {
-        setIsPrinting(true);
-        try {
-            let finalBillId;
-
-            // Check if editing existing bill or creating new one
-            if (billData.editMode && billData.originalBillId) {
-                // UPDATE existing bill
-                await window.electronAPI.updateBill(
-                    billData.originalBillId,
-                    items,
-                    total,
-                    billData.supplierId || null,
-                    billData.billDate || null
-                );
-                finalBillId = billData.originalBillId;
-            } else {
-                // CREATE new bill
-                finalBillId = await window.electronAPI.saveBill(
-                    items,
-                    total,
-                    billData.creditCustomerId || null,
-                    billData.supplierId || null,
-                    billData.billDate || null
-                );
+            for (const type of print) {
+                await window.electronAPI.printSilent(finalBillData, type);
             }
 
-            // Navigate back
-            const successMsg = billData.editMode ? 'Bill Updated Successfully!' : 'Bill Saved Successfully!';
             setToast({ message: successMsg, type: 'success' });
             setTimeout(() => {
                 if (billData.editMode) {
-                    onNavigate('records');
+                    goBackAfterEdit();
                 } else if (billData.creditCustomerId) {
                     // Return to credit details for that specific customer
                     onNavigate('credit-details', billData.creditCustomerId);
                 } else {
                     onNavigate('billing');
                 }
-            }, 1500);
+            }, delay);
         } catch (error) {
-            console.error('Save Error:', error);
-            setToast({ message: 'Saving Failed: ' + error.message, type: 'error' });
-        } finally {
+            console.error('Bill action error:', error);
+            const savedNote = billId && !billData.editMode
+                ? ` Bill #${String(billId).padStart(4, '0')} is already saved — try again to print it (it will not be saved twice).`
+                : '';
+            setToast({ message: `${failMsg}: ${error.message}.${savedNote}`, type: 'error' });
+            actionInFlightRef.current = false;
             setIsPrinting(false);
         }
     };
 
-    const handlePrintKOTAndBill = async () => {
-        setIsPrinting(true);
-        try {
-            let finalBillId;
+    const handlePrintBill = () => runAction({
+        print: ['BILL'],
+        successMsg: billData.editMode ? 'Bill Updated & Reprinted!' : 'Bill Printed Successfully!',
+        failMsg: 'Printing Failed',
+        delay: 1000,
+    });
 
-            // Check if editing existing bill or creating new one
-            if (billData.editMode && billData.originalBillId) {
-                // UPDATE existing bill
-                await window.electronAPI.updateBill(
-                    billData.originalBillId,
-                    items,
-                    total,
-                    billData.supplierId || null,
-                    billData.billDate || null
-                );
-                finalBillId = billData.originalBillId;
-            } else {
-                // CREATE new bill
-                finalBillId = await window.electronAPI.saveBill(
-                    items,
-                    total,
-                    billData.creditCustomerId || null,
-                    billData.supplierId || null,
-                    billData.billDate || null
-                );
-            }
+    const handlePrintKOTOnly = () => runAction({
+        print: ['KOT'],
+        successMsg: billData.editMode ? 'Bill Updated & KOT Reprinted!' : 'KOT Printed Successfully!',
+        failMsg: 'KOT Printing Failed',
+        delay: 1000,
+    });
 
-            // Update bill number
-            const finalBillData = {
-                ...billData,
-                billNumber: finalBillId.toString().padStart(4, '0')
-            };
+    const handleSaveBillOnly = () => runAction({
+        print: [],
+        successMsg: billData.editMode ? 'Bill Updated Successfully!' : 'Bill Saved Successfully!',
+        failMsg: 'Saving Failed',
+        delay: 1500,
+    });
 
-            // Print KOT silently
-            await window.electronAPI.printSilent(finalBillData, 'KOT');
+    const handlePrintKOTAndBill = () => runAction({
+        print: ['KOT', 'BILL'],
+        successMsg: billData.editMode ? 'Bill Updated & Reprinted with KOT!' : 'KOT & Bill Printed Successfully!',
+        failMsg: 'Printing Failed',
+        delay: 1500,
+    });
 
-            // Print Bill silently
-            await window.electronAPI.printSilent(finalBillData, 'BILL');
-
-            const successMsg = billData.editMode ? 'Bill Updated & Reprinted with KOT!' : 'KOT & Bill Printed Successfully!';
-            setToast({ message: successMsg, type: 'success' });
-            setTimeout(() => {
-                if (billData.editMode) {
-                    onNavigate('records');
-                } else if (billData.creditCustomerId) {
-                    // Return to credit details for that specific customer
-                    onNavigate('credit-details', billData.creditCustomerId);
-                } else {
-                    onNavigate('billing');
-                }
-            }, 1500);
-        } catch (error) {
-            console.error('Print Error:', error);
-            setToast({ message: 'Printing Failed: ' + error.message, type: 'error' });
-        } finally {
-            setIsPrinting(false);
+    // After editing a bill: back to where the edit started (customer page) or Records by default
+    const goBackAfterEdit = () => {
+        if (billData.returnTo) {
+            onNavigate(billData.returnTo.page, billData.returnTo.data);
+        } else {
+            onNavigate('records');
         }
     };
 
     // Navigation helper to go back to billing with context preserved
+    // (cart, staff and date are kept for every bill type so mistakes can be fixed quickly)
     const handleBackToBilling = () => {
-        if (billData.creditCustomerId || billData.editMode) {
+        if (savedBillId && !billData.editMode) {
+            // This new bill is already saved (printing failed): go back as an edit of it, so it is never saved twice
             onNavigate('billing', {
-                creditCustomerId: billData.creditCustomerId,
+                editMode: true,
+                originalBillId: savedBillId,
                 customerName: billData.customerName,
-                editMode: billData.editMode,
-                originalBillId: billData.originalBillId,
                 cart: billData.items,
-                billDate: billData.billDate
+                billDate: billData.billDate,
+                supplierId: billData.supplierId,
+                returnTo: billData.creditCustomerId
+                    ? { page: 'credit-details', data: billData.creditCustomerId }
+                    : { page: 'billing' }
             });
-        } else {
-            onNavigate('billing');
+            return;
         }
+        onNavigate('billing', {
+            creditCustomerId: billData.creditCustomerId,
+            customerName: billData.customerName,
+            editMode: billData.editMode,
+            originalBillId: billData.originalBillId,
+            cart: billData.items,
+            billDate: billData.billDate,
+            supplierId: billData.supplierId,
+            returnTo: billData.returnTo
+        });
     };
 
     return (
@@ -373,7 +278,7 @@ function PrintPreviewPage({ onNavigate, billData }) {
                                         <tr key={idx}>
                                             <td className="col-item">{getItemPrintName(item, printLanguage)}</td>
                                             <td className="right col-qty">{item.quantity}</td>
-                                            <td className="right col-total">{(item.price * item.quantity).toFixed(0)}</td>
+                                            <td className="right col-total">{formatMoney(item.price * item.quantity)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -381,7 +286,7 @@ function PrintPreviewPage({ onNavigate, billData }) {
                             <div className="bill-divider"></div>
                             <div className="bill-total-row">
                                 <span>TOTAL</span>
-                                <span>₹{total.toFixed(0)}</span>
+                                <span>₹{formatMoney(total)}</span>
                             </div>
                             <div className="bill-center footer-text mt-10">Thank You! Visit Again!</div>
                         </div>
