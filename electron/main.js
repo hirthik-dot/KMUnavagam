@@ -114,6 +114,22 @@ app.whenReady().then(async () => {
   // Initialize the database
   await db.initializeDatabase();
 
+  // Auto daily wages: credit today now, and again whenever the date changes while the app stays open
+  let lastWageRunDate = null;
+  const runDailyWagesIfNewDay = () => {
+    const today = new Date().toDateString();
+    if (today === lastWageRunDate) return;
+    try {
+      const { credited } = db.runDailyWages();
+      lastWageRunDate = today;
+      if (credited > 0) logger.log(`💰 Auto daily wages credited for ${credited} employee(s)`, 'INFO');
+    } catch (error) {
+      logger.log(`❌ Auto daily wages failed: ${error.message}`, 'ERROR');
+    }
+  };
+  runDailyWagesIfNewDay();
+  setInterval(runDailyWagesIfNewDay, 60 * 1000);
+
   // Set up IPC handlers (communication between React and Electron)
   setupIPCHandlers();
 
@@ -725,6 +741,54 @@ function setupIPCHandlers() {
       return db.updateEmployee(id, name, dailyWage, isActive);
     } catch (error) {
       console.error('Error updating employee:', error);
+      throw error;
+    }
+  });
+
+  // ========== AUTO DAILY WAGES ==========
+
+  // Credits today's wages (idempotent) and returns missed days that need the user's decision
+  ipcMain.handle('wages:getPendingDays', async () => {
+    try {
+      return db.runDailyWages().pendingDays;
+    } catch (error) {
+      console.error('Error checking pending wage days:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wages:resolvePendingDays', async (event, datesToCredit) => {
+    try {
+      return db.resolvePendingWageDays(datesToCredit);
+    } catch (error) {
+      console.error('Error resolving pending wage days:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wages:markAbsent', async (event, employeeId, date) => {
+    try {
+      return db.markEmployeeAbsent(employeeId, date);
+    } catch (error) {
+      console.error('Error marking absent:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wages:markHoliday', async (event, date) => {
+    try {
+      return db.markShopHoliday(date);
+    } catch (error) {
+      console.error('Error marking holiday:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wages:removeSkip', async (event, employeeId, date) => {
+    try {
+      return db.removeWageSkip(employeeId, date);
+    } catch (error) {
+      console.error('Error removing absent/holiday:', error);
       throw error;
     }
   });

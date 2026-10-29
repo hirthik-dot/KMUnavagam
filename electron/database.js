@@ -1792,9 +1792,16 @@ function getEmployeeDetails(employeeId) {
   if (!employee) throw new Error("Employee not found");
 
   const transactions = db.prepare(`
-    SELECT * FROM employee_transactions 
-    WHERE employee_id = ? 
+    SELECT * FROM employee_transactions
+    WHERE employee_id = ?
     ORDER BY transaction_date DESC, id DESC
+  `).all(employeeId);
+
+  // Absent / holiday days (no auto wage) so the history can show them
+  const skips = db.prepare(`
+    SELECT skip_date, reason FROM employee_wage_skips
+    WHERE employee_id = ? AND reason IN ('ABSENT', 'HOLIDAY')
+    ORDER BY skip_date DESC
   `).all(employeeId);
 
   const balanceResult = db.prepare(`
@@ -1806,12 +1813,14 @@ function getEmployeeDetails(employeeId) {
   return {
     ...employee,
     balance: balanceResult.balance,
-    transactions
+    transactions,
+    skips
   };
 }
 
 /**
  * Add a new employee or re-activate if deleted
+ * autoWage: credit dailyWage automatically every day from wageStartDate (YYYY-MM-DD)
  */
 function addEmployee(name, dailyWage = 0) {
   const database = ensureDb();
@@ -1839,6 +1848,7 @@ function addEmployee(name, dailyWage = 0) {
 
 /**
  * Update employee info
+ * A new daily wage applies from today: today's untouched auto wage is moved to the new rate.
  */
 function updateEmployee(id, name, dailyWage, isActive) {
   const stmt = ensureDb().prepare(`
@@ -1848,6 +1858,151 @@ function updateEmployee(id, name, dailyWage, isActive) {
   `);
   const result = stmt.run(name, dailyWage, isActive ? 1 : 0, id);
   return result.changes;
+}
+
+/**
+ * Called on app start and when the date changes while the app is open.
+ * Credits today's wages and returns the days in between that were never processed
+ * (app not opened) so the user can decide whether to add wages for them.
+ */
+function runDailyWages() {
+  const today = getLocalDateString();
+  const credited = creditDailyWages(today);
+
+  let processedThrough = getSetting(WAGE_PROCESSED_THROUGH_KEY);
+  if (!processedThrough) {
+    // First run after this feature ships: never back-fill history
+    processedThrough = getLocalDateString(-1);
+    setSetting(WAGE_PROCESSED_THROUGH_KEY, processedThrough);
+  }
+
+  const pendingDays = getPendingWageDays(processedThrough, today);
+  if (pendingDays.length === 0) {
+    setSetting(WAGE_PROCESSED_THROUGH_KEY, today);
+  }
+  return { credited, pendingDays };
+}
+
+/**
+ * Dates strictly between processedThrough and today (YYYY-MM-DD), with what auto wages would cost.
+ * Only returned if at least one employee has auto wages on.
+ */
+function getPendingWageDays(processedThrough, today) {
+  const database = ensureDb();
+  const autoCount = database.prepare(`
+    SELECT COUNT(*) as c FROM employees
+    WHERE is_deleted = 0 AND is_active = 1 AND auto_wage = 1 AND daily_wage > 0
+  `).get().c;
+  if (autoCount === 0) return [];
+
+  const days = [];
+  const cursor = new Date(processedThrough + 'T00:00:00');
+  cursor.setDate(cursor.getDate() + 1);
+  // Cap at 90 days so a very long gap can't build a huge list
+  while (days.length < 90) {
+    const date = cursor.getFullYear() + '-' +
+      String(cursor.getMonth() + 1).padStart(2, '0') + '-' +
+      String(cursor.getDate()).padStart(2, '0');
+    if (date >= today) break;
+    days.push(date);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const preview = database.prepare(`
+    SELECT COUNT(*) as employees, COALESCE(SUM(e.daily_wage), 0) as total
+    FROM employees e
+    WHERE e.is_deleted = 0 AND e.is_active = 1 AND e.auto_wage = 1 AND e.daily_wage > 0
+      AND (e.wage_start_date IS NULL OR e.wage_start_date <= ?)
+      AND NOT EXISTS (SELECT 1 FROM employee_wage_skips s WHERE s.employee_id = e.id AND s.skip_date = ?)
+      AND NOT EXISTS (
+        SELECT 1 FROM employee_transactions t
+        WHERE t.employee_id = e.id AND t.transaction_date = ? AND t.is_auto = 1
+      )
+  `);
+  return days
+    .map((date) => ({ date, ...preview.get(date, date, date) }))
+    .filter((d) => d.employees > 0);
+}
+
+/**
+ * User's answer to the "app wasn't opened on these days" prompt.
+ * Credits wages for the chosen dates; all other missed days get no wage.
+ */
+function resolvePendingWageDays(datesToCredit = []) {
+  return ensureDb().transaction(() => {
+    let credited = 0;
+    for (const date of datesToCredit) {
+      credited += creditDailyWages(date);
+    }
+    setSetting(WAGE_PROCESSED_THROUGH_KEY, getLocalDateString());
+    return credited;
+  })();
+}
+
+/**
+ * Mark an employee absent for a day: removes that day's auto wage and stops it being re-added
+ */
+function markEmployeeAbsent(employeeId, date) {
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    database.prepare(`
+      DELETE FROM employee_transactions
+      WHERE employee_id = ? AND transaction_date = ? AND is_auto = 1
+    `).run(employeeId, date);
+    database.prepare(`
+      INSERT OR REPLACE INTO employee_wage_skips (employee_id, skip_date, reason)
+      VALUES (?, ?, 'ABSENT')
+    `).run(employeeId, date);
+  })();
+}
+
+/**
+ * Shop holiday: no auto wage for anyone with auto wages on that day
+ */
+function markShopHoliday(date) {
+  return ensureDb().transaction(() => {
+    const database = ensureDb();
+    database.prepare('INSERT OR IGNORE INTO shop_holidays (holiday_date) VALUES (?)').run(date);
+    const employees = database.prepare(`
+      SELECT id FROM employees WHERE is_deleted = 0 AND auto_wage = 1
+    `).all();
+    for (const { id } of employees) {
+      database.prepare(`
+        DELETE FROM employee_transactions
+        WHERE employee_id = ? AND transaction_date = ? AND is_auto = 1
+      `).run(id, date);
+      database.prepare(`
+        INSERT OR REPLACE INTO employee_wage_skips (employee_id, skip_date, reason)
+        VALUES (?, ?, 'HOLIDAY')
+      `).run(id, date);
+    }
+    return employees.length;
+  })();
+}
+
+/**
+ * Give an employee the shop holidays from today onwards (no auto wage on those days).
+ * Used when someone is added, re-activated or switched to auto wage after a holiday was marked.
+ */
+function applyShopHolidays(employeeId) {
+  ensureDb().prepare(`
+    INSERT OR IGNORE INTO employee_wage_skips (employee_id, skip_date, reason)
+    SELECT ?, holiday_date, 'HOLIDAY' FROM shop_holidays WHERE holiday_date >= ?
+  `).run(employeeId, getLocalDateString());
+}
+
+/**
+ * Undo Absent / Holiday for one employee on a day: the auto wage is credited again (not for future days)
+ */
+function removeWageSkip(employeeId, date) {
+  return ensureDb().transaction(() => {
+    ensureDb().prepare(`
+      DELETE FROM employee_wage_skips WHERE employee_id = ? AND skip_date = ?
+    `).run(employeeId, date);
+    if (date <= getLocalDateString()) {
+      creditDailyWages(date);
+    }
+  })();
 }
 
 /**
@@ -1935,12 +2090,20 @@ function updateEmployeeTransaction(id, amount, description, date) {
 function deleteEmployeeTransaction(transactionId) {
   return ensureDb().transaction(() => {
     const database = ensureDb();
-    const transaction = database.prepare('SELECT id, expense_id FROM employee_transactions WHERE id = ?').get(transactionId);
+    const transaction = database.prepare('SELECT id, expense_id, employee_id, transaction_date, is_auto FROM employee_transactions WHERE id = ?').get(transactionId);
     if (!transaction) return 0;
 
     if (transaction.expense_id) {
       database.prepare('UPDATE employee_transactions SET expense_id = NULL WHERE id = ?').run(transactionId);
       database.prepare('DELETE FROM expenses WHERE id = ?').run(transaction.expense_id);
+    }
+
+    // A deleted auto wage must stay deleted (otherwise it is re-credited on the next app start)
+    if (transaction.is_auto) {
+      database.prepare(`
+        INSERT OR IGNORE INTO employee_wage_skips (employee_id, skip_date, reason)
+        VALUES (?, ?, 'REMOVED')
+      `).run(transaction.employee_id, transaction.transaction_date);
     }
 
     const result = database.prepare('DELETE FROM employee_transactions WHERE id = ?').run(transactionId);
@@ -2390,6 +2553,12 @@ module.exports = {
   addEmployeeTransaction,
   updateEmployeeTransaction,
   deleteEmployeeTransaction,
+  // Auto daily wage functions
+  runDailyWages,
+  resolvePendingWageDays,
+  markEmployeeAbsent,
+  markShopHoliday,
+  removeWageSkip,
   // System functions
   backupDatabase,
   // Safety/Backup functions

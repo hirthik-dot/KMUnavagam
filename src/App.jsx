@@ -8,6 +8,8 @@ import CreditsPage from './pages/CreditsPage';
 import CreditDetailsPage from './pages/CreditDetailsPage';
 import StaffPage from './pages/StaffPage';
 import PrintPreviewPage from './pages/PrintPreviewPage';
+import SummaryPreviewPage from './pages/SummaryPreviewPage';
+import PendingWagesModal from './components/PendingWagesModal';
 import './App.css';
 import './index.css';
 
@@ -88,6 +90,8 @@ function App() {
   return (
     <div className="app">
       {renderPage()}
+      {/* Asks once on start-up whether to add auto daily wages for days the app wasn't opened */}
+      <PendingWagesModal />
     </div>
   );
 }

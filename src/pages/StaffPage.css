@@ -241,7 +241,7 @@
 /* Detail Actions */
 .detail-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* 3 or 4 buttons (Mark Absent only with auto wage) */
     gap: 20px;
     margin-bottom: 40px;
 }

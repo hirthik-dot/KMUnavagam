@@ -18,6 +18,9 @@ function StaffPage({ onNavigate }) {
     const [newStaff, setNewStaff] = useState({ name: '' });
     const [editingStaff, setEditingStaff] = useState(null);
 
+    // Absent (one employee) / Shop holiday (everyone) date picker: { type: 'ABSENT' | 'HOLIDAY', date }
+    const [skipForm, setSkipForm] = useState(null);
+
     const [showTransactionForm, setShowTransactionForm] = useState(false);
     const [transactionType, setTransactionType] = useState('WAGE'); // 'WAGE' or 'PAYMENT'
     const [transAmount, setTransAmount] = useState('');
@@ -50,9 +53,22 @@ function StaffPage({ onNavigate }) {
         }
     }
 
+    // Returns the wage settings to save, or null (with a warning) if auto wage is on without an amount
+    const readWageSettings = (staff) => {
+        const dailyWage = parseFloat(staff.daily_wage) || 0;
+        const autoWage = !!staff.auto_wage;
+        if (autoWage && dailyWage <= 0) {
+            setToast({ message: 'Enter a daily wage to turn on auto wage', type: 'warning' });
+            return null;
+        }
+        return { dailyWage, autoWage, wageStartDate: staff.wage_start_date || null };
+    };
+
     const handleAddStaff = async (e) => {
         e.preventDefault();
         if (!newStaff.name.trim()) return;
+        const wage = readWageSettings(newStaff);
+        if (!wage) return;
         try {
             await window.electronAPI.addEmployee(newStaff.name, 0);
             setNewStaff({ name: '' });
@@ -67,6 +83,8 @@ function StaffPage({ onNavigate }) {
     const handleUpdateStaff = async (e) => {
         e.preventDefault();
         if (!editingStaff.name.trim()) return;
+        const wage = readWageSettings(editingStaff);
+        if (!wage) return;
         try {
             await window.electronAPI.updateEmployee(
                 editingStaff.id, 
@@ -173,6 +191,9 @@ function StaffPage({ onNavigate }) {
                                 <p className="view-subtitle">Manage wages and salary records</p>
                             </div>
                             <div className="header-actions">
+                                <button className="add-btn holiday-btn" onClick={() => setSkipForm({ type: 'HOLIDAY', date: getTodayLocaleDate() })}>
+                                    <i className="fas fa-umbrella-beach"></i> Shop Holiday
+                                </button>
                                 <button className="add-btn" onClick={() => setShowAddStaffForm(true)}>+ New Employee</button>
                             </div>
                         </div>
@@ -189,6 +210,7 @@ function StaffPage({ onNavigate }) {
                                         <tr>
                                             <th>Status</th>
                                             <th>Employee Name</th>
+                                            <th>Daily Wage</th>
                                             <th className="text-right">Total Payable (₹)</th>
                                             <th className="text-center">Manage</th>
                                         </tr>
@@ -283,6 +305,11 @@ function StaffPage({ onNavigate }) {
                             }}>
                                 <i className="fas fa-check-double"></i> Settle All
                             </button>
+                            {selectedStaffDetail.auto_wage === 1 && (
+                                <button className="action-btn absent-btn" onClick={() => setSkipForm({ type: 'ABSENT', date: getTodayLocaleDate() })}>
+                                    <i className="fas fa-user-slash"></i> Mark Absent
+                                </button>
+                            )}
                         </div>
 
                         <div className="history-section">
@@ -299,7 +326,26 @@ function StaffPage({ onNavigate }) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {selectedStaffDetail.transactions.map(t => (
+                                        {historyRows.map(({ skip: s, transaction: t }) => s ? (
+                                            // Absent / holiday day: no wage, can be undone
+                                            <tr key={`skip-${s.skip_date}`} className="skip-row">
+                                                <td>{formatToDisplayDate(s.skip_date)}</td>
+                                                <td>
+                                                    <span className={`type-badge ${s.reason === 'ABSENT' ? 'absent' : 'holiday'}`}>
+                                                        {s.reason === 'ABSENT' ? 'Absent' : 'Holiday'}
+                                                    </span>
+                                                </td>
+                                                <td>No wage for this day</td>
+                                                <td>-</td>
+                                                <td>
+                                                    <div className="actions-cell">
+                                                        <button className="icon-btn edit" title="Undo — add the wage back" onClick={() => handleRemoveSkip(s)}>
+                                                            <i className="fas fa-rotate-left"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
                                             <tr key={t.id}>
                                                 <td>{formatToDisplayDate(t.transaction_date)}</td>
                                                 <td>
@@ -331,12 +377,16 @@ function StaffPage({ onNavigate }) {
             {showAddStaffForm && (
                 <div className="modal-overlay">
                     <div className="modal-content">
+                        <button type="button" className="modal-close-btn" title="Close" onClick={() => setShowAddStaffForm(false)}>
+                            <i className="fas fa-xmark"></i>
+                        </button>
                         <h2>Add New Employee</h2>
                         <form onSubmit={handleAddStaff}>
                             <div className="form-group">
                                 <label>Full Name</label>
                                 <input type="text" required value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} autoFocus />
                             </div>
+                            {renderWageFields(newStaff, setNewStaff)}
                             <div className="modal-actions">
                                 <button type="button" className="btn-cancel" onClick={() => setShowAddStaffForm(false)}>Cancel</button>
                                 <button type="submit" className="btn-save">Save</button>
@@ -349,6 +399,9 @@ function StaffPage({ onNavigate }) {
             {showEditStaffForm && editingStaff && (
                 <div className="modal-overlay">
                     <div className="modal-content">
+                        <button type="button" className="modal-close-btn" title="Close" onClick={() => { setShowEditStaffForm(false); setEditingStaff(null); }}>
+                            <i className="fas fa-xmark"></i>
+                        </button>
                         <h2>Edit Employee Information</h2>
                         <form onSubmit={handleUpdateStaff}>
                              <div className="form-group">
@@ -360,6 +413,7 @@ function StaffPage({ onNavigate }) {
                                     onChange={(e) => setEditingStaff({ ...editingStaff, name: e.target.value })} 
                                 />
                             </div>
+                            {renderWageFields(editingStaff, setEditingStaff)}
                             <div className="form-group">
                                 <label className="chk-label">
                                     <input 
@@ -381,9 +435,38 @@ function StaffPage({ onNavigate }) {
                 </div>
             )}
 
+            {skipForm && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <button type="button" className="modal-close-btn" title="Close" onClick={() => setSkipForm(null)}>
+                            <i className="fas fa-xmark"></i>
+                        </button>
+                        <h2>{skipForm.type === 'ABSENT' ? `Mark ${selectedStaffDetail?.name} Absent` : 'Shop Holiday'}</h2>
+                        <p className="help-text skip-help">
+                            {skipForm.type === 'ABSENT'
+                                ? 'No daily wage will be added for this day. If it was already added, it is removed.'
+                                : 'No daily wage for any employee on auto wage for this day. Already added wages for the day are removed.'}
+                        </p>
+                        <form onSubmit={handleSaveSkip}>
+                            <div className="form-group">
+                                <label>Date</label>
+                                <input type="date" required value={skipForm.date} onChange={(e) => setSkipForm({ ...skipForm, date: e.target.value })} />
+                            </div>
+                            <div className="modal-actions">
+                                <button type="button" className="btn-cancel" onClick={() => setSkipForm(null)}>Cancel</button>
+                                <button type="submit" className="btn-save">{skipForm.type === 'ABSENT' ? 'Mark Absent' : 'Mark Holiday'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {showTransactionForm && (
                 <div className="modal-overlay">
                     <div className="modal-content">
+                        <button type="button" className="modal-close-btn" title="Close" onClick={() => { setShowTransactionForm(false); setEditingTransactionId(null); }}>
+                            <i className="fas fa-xmark"></i>
+                        </button>
                         <h2>{editingTransactionId ? 'Edit Entry' : (transactionType === 'WAGE' ? 'Add Wage' : 'Give Cash')}</h2>
                         <form onSubmit={handleSaveTransaction}>
                             <div className="form-group">
