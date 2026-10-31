@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Installed version, e.g. "1.0.3"
     getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 
+    // Write a screen error to the app log ({ message, stack, page })
+    logError: (details) => ipcRenderer.invoke('app:logError', details),
+
     // Staff Maintenance PIN lock (always on; first visit creates the PIN)
     hasStaffPin: () => ipcRenderer.invoke('staffLock:hasPin'),
     verifyStaffPin: (pin) => ipcRenderer.invoke('staffLock:verify', pin),

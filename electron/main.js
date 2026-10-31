@@ -5,14 +5,48 @@ const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
-const creditStatementExport = require('./creditStatementExport');
-const staffLock = require('./staffLock');
+
+// Test-only data folder (used by "npm run verify:build" to start the packaged app on test data).
+// Never set in normal use. Must run before anything reads the userData path.
+if (process.env.ZERIVO_USER_DATA) {
+  app.setPath('userData', process.env.ZERIVO_USER_DATA);
+}
 
 // Force dd/mm/yyyy date format by setting locale
 app.commandLine.appendSwitch('lang', 'en-GB');
 app.commandLine.appendSwitch('accept-languages', 'en-GB,en,en-IN');
 
 const logger = require('./logger');
+
+// GLOBAL CRASH HANDLING — registered before any other app module loads, so even a module that
+// fails to load (like a missing package) is logged.
+//  - While starting up: log, show what happened, and exit cleanly (no half-working app).
+//  - After startup (during service): log and keep running, so billing is not interrupted.
+let startupComplete = false;
+
+process.on('uncaughtException', (error) => {
+  logger.log(`🔥 CRITICAL: Uncaught Exception${startupComplete ? '' : ' during startup'}`, 'ERROR');
+  logger.log(error.stack || error, 'ERROR');
+  if (!startupComplete) {
+    try {
+      dialog.showErrorBox(
+        'Zerivo could not start',
+        `${error.message}
+
+Your data has not been changed.
+Please contact LancingHub: +91 9514001712 / +91 9952652246`
+      );
+    } catch (e) { /* dialog not available yet */ }
+    app.exit(1);
+  }
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.log('🔥 CRITICAL: Unhandled Rejection', 'ERROR');
+  logger.log(reason instanceof Error ? reason.stack : reason, 'ERROR');
+});
+
+const staffLock = require('./staffLock');
 const dbSafety = require('./dbSafety');
 
 // DETERMINISTIC DATABASE PATHS (Required for pre-load recovery)
@@ -35,16 +69,13 @@ try {
 // Now safe to import database module
 const db = require('./database');
 
-// GLOBAL CRASH LOGGING
-process.on('uncaughtException', (error) => {
-  logger.log('🔥 CRITICAL: Uncaught Exception', 'ERROR');
-  logger.log(error.stack || error, 'ERROR');
-});
-
-process.on('unhandledRejection', (reason) => {
-  logger.log('🔥 CRITICAL: Unhandled Rejection', 'ERROR');
-  logger.log(reason instanceof Error ? reason.stack : reason, 'ERROR');
-});
+// PDF/Excel statement export is loaded only when used, so a problem in it can never stop the app
+// from opening: billing keeps working and only the export shows an error.
+let creditStatementExport = null;
+function getStatementExport() {
+  if (!creditStatementExport) creditStatementExport = require('./creditStatementExport');
+  return creditStatementExport;
+}
 
 // Store reference to the main window
 let mainWindow;
@@ -92,6 +123,14 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
 
+  // If the screen part of the app crashes or hangs, log it and reload instead of leaving a blank window
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    logger.log(`🔥 Screen process gone (${details.reason}, exit ${details.exitCode}) — reloading`, 'ERROR');
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
+  });
+  mainWindow.on('unresponsive', () => logger.log('⚠️ Window not responding', 'WARN'));
+  mainWindow.on('responsive', () => logger.log('Window responding again', 'INFO'));
+
   // Handle window close
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -136,6 +175,10 @@ app.whenReady().then(async () => {
 
   // Create the window
   createWindow();
+
+  // From here on, unexpected errors are logged and the app keeps running (no exit during service)
+  startupComplete = true;
+  logger.log(`✅ Zerivo ${app.getVersion()} started`, 'INFO');
 
   // Cache the default printer name once the main window is ready
   mainWindow.webContents.once('did-finish-load', async () => {
@@ -1169,6 +1212,14 @@ function setupIPCHandlers() {
   // Installed app version (package.json "version", bumped on every build:win) — shown in the footer
   ipcMain.handle('app:getVersion', () => app.getVersion());
 
+  // Errors from the screens (React) are written to the same log file as the main process
+  ipcMain.handle('app:logError', (event, details) => {
+    const { message, stack, page } = details || {};
+    logger.log(`🔥 Screen error${page ? ` on "${page}"` : ''}: ${message || 'unknown'}`, 'ERROR');
+    if (stack) logger.log(stack, 'ERROR');
+    return true;
+  });
+
   // Staff Maintenance PIN lock (hash checked here in the main process, never sent to the page)
   ipcMain.handle('staffLock:hasPin', () => staffLock.hasPin());
   ipcMain.handle('staffLock:verify', (event, pin) => staffLock.verifyPin(pin));
@@ -1197,6 +1248,7 @@ function setupIPCHandlers() {
   // Export a credit customer's statement for a date range as PDF or Excel (format: 'pdf' | 'xlsx')
   ipcMain.handle('export:creditStatement', async (event, customerId, startDate, endDate, format) => {
     try {
+      const creditStatementExport = getStatementExport();
       const statement = db.getCreditStatement(customerId, startDate, endDate);
       const isPdf = format === 'pdf';
 

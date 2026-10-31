@@ -10,6 +10,7 @@ import StaffPage from './pages/StaffPage';
 import PrintPreviewPage from './pages/PrintPreviewPage';
 import SummaryPreviewPage from './pages/SummaryPreviewPage';
 import PendingWagesModal from './components/PendingWagesModal';
+import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 import './index.css';
 
@@ -90,7 +91,10 @@ function App() {
 
   return (
     <div className="app">
-      {renderPage()}
+      {/* A crash on one page shows a recovery screen instead of a blank window; changing page resets it */}
+      <ErrorBoundary key={currentPage} page={currentPage} onHome={() => handleNavigate('home')}>
+        {renderPage()}
+      </ErrorBoundary>
       {/* Asks once on start-up whether to add auto daily wages for days the app wasn't opened */}
       <PendingWagesModal />
     </div>

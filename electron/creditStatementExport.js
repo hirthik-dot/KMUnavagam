@@ -5,7 +5,9 @@ const { BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const ExcelJS = require('exceljs');
+// exceljs pre-bundled into one file (npm run bundle:excel, run by dev and build:win).
+// electron-builder fails to package its ~40 nested dependencies, which crashed the installed app.
+const ExcelJS = require('./vendor/exceljs');
 
 const SHOP_NAME = 'KM Unavagam';
 const SHOP_ADDRESS = 'Bodipalaiyam Main Road, Malumichampatti, Coimbatore, TAMIL NADU, 641050';

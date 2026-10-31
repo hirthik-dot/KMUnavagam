@@ -1,0 +1,37 @@
+/* Recovery screen shown when a page crashes (instead of a blank window) */
+.error-boundary {
+    max-width: 520px;
+    margin: 120px auto;
+    padding: 40px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    text-align: center;
+    color: #1e293b;
+}
+
+.error-boundary > i {
+    font-size: 44px;
+    color: #f59e0b;
+}
+
+.error-boundary h2 {
+    font-size: 26px;
+    margin: 16px 0 8px;
+}
+
+.error-boundary p {
+    color: #64748b;
+    margin: 0 0 24px;
+}
+
+.error-boundary-btn {
+    padding: 14px 28px;
+    border: none;
+    border-radius: 12px;
+    background: #10b981;
+    color: white;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+}
