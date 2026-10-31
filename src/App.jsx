@@ -52,7 +52,8 @@ function App() {
         return <BillingPage onNavigate={handleNavigate} creditCustomer={navData} />;
 
       case 'records':
-        return <RecordsPage onNavigate={handleNavigate} />;
+        // navData restores the filter / range / open day when coming back from editing a bill
+        return <RecordsPage onNavigate={handleNavigate} restoreView={navData} />;
 
       case 'expenses':
         return <ExpensesPage onNavigate={handleNavigate} initialTab={navData?.tab} />;

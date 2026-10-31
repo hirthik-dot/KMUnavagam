@@ -6,7 +6,8 @@ import Toast from '../components/Toast';
 import PaymentSuccessModal from '../components/PaymentSuccessModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatMoney, roundMoney } from '../utils/money';
-import './CreditDetailsPage.css';
+import './CreditDetailsPage.css';
+import DateInput from '../components/DateInput';
 
 /**
  * CREDIT CUSTOMER DETAIL PAGE
@@ -96,14 +97,14 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
         try {
             const success = await window.electronAPI.deleteBill(billToDelete.id);
             if (success) {
-                setToast({ message: '✅ Bill Deleted Successfully', type: 'success' });
+                setToast({ message: 'Bill Deleted Successfully', type: 'success' });
                 loadCustomerDetails();
             } else {
-                setToast({ message: '❌ Bill not found or already deleted', type: 'error' });
+                setToast({ message: 'Bill not found or already deleted', type: 'error' });
             }
         } catch (error) {
             console.error('Error deleting bill:', error);
-            setToast({ message: `❌ Failed to delete bill: ${error.message || 'Unknown error'}`, type: 'error' });
+            setToast({ message: `Failed to delete bill: ${error.message || 'Unknown error'}`, type: 'error' });
         } finally {
             setBillToDelete(null);
         }
@@ -457,9 +458,7 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                             </div>
                             <div className="form-group">
                                 <label>Payment Date</label>
-                                <input
-                                    type="date"
-                                    value={paymentDate}
+                                <DateInput value={paymentDate}
                                     onChange={(e) => setPaymentDate(e.target.value)}
                                 />
                             </div>
@@ -484,18 +483,14 @@ function CreditDetailsPage({ onNavigate, customerId, summaryRange }) {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>From Date</label>
-                                    <input
-                                        type="date"
-                                        value={summaryStartDate}
+                                    <DateInput value={summaryStartDate}
                                         onChange={(e) => setSummaryStartDate(e.target.value)}
                                         required
                                     />
                                 </div>
                                 <div className="form-group">
                                     <label>To Date</label>
-                                    <input
-                                        type="date"
-                                        value={summaryEndDate}
+                                    <DateInput value={summaryEndDate}
                                         onChange={(e) => setSummaryEndDate(e.target.value)}
                                         required
                                     />

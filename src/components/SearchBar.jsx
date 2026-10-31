@@ -7,7 +7,7 @@ function SearchBar({ searchQuery, setSearchQuery }) {
             <input
                 type="text"
                 className="search-input"
-                placeholder="Search food items..."
+                placeholder="Search food items... (press /)"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
             />

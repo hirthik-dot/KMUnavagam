@@ -4,7 +4,8 @@ import Footer from '../components/Footer';
 import Toast from '../components/Toast';
 import { getTodayLocaleDate } from '../utils/DateUtils';
 import './RecordsPage.css';
-import { formatMoney } from '../utils/money';
+import { formatMoney } from '../utils/money';
+import DateInput from '../components/DateInput';
 
 /**
  * RECORDS PAGE
@@ -12,11 +13,12 @@ import { formatMoney } from '../utils/money';
  * Shows day-wise sales, expenses, and profit
  * Click on a day to see all bills
  */
-function RecordsPage({ onNavigate }) {
+function RecordsPage({ onNavigate, restoreView }) {
     const [records, setRecords] = useState([]);
-    const [filter, setFilter] = useState('today');
-    const [customStartDate, setCustomStartDate] = useState('');
-    const [customEndDate, setCustomEndDate] = useState('');
+    // restoreView: the view to come back to after Edit & Reprint (same filter, range, tab and open day)
+    const [filter, setFilter] = useState(restoreView?.filter || 'today');
+    const [customStartDate, setCustomStartDate] = useState(restoreView?.customStartDate || '');
+    const [customEndDate, setCustomEndDate] = useState(restoreView?.customEndDate || '');
     const [selectedDate, setSelectedDate] = useState(null);
     const [dayDetails, setDayDetails] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -26,7 +28,7 @@ function RecordsPage({ onNavigate }) {
     const [selectedBill, setSelectedBill] = useState(null);
     const [billItems, setBillItems] = useState([]);
     const [isBillLoading, setIsBillLoading] = useState(false);
-    const [tab, setTab] = useState('daily'); // 'daily' or 'supplier'
+    const [tab, setTab] = useState(restoreView?.tab || 'daily'); // 'daily' or 'supplier'
     const [supplierSales, setSupplierSales] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
     const [supplierFilter, setSupplierFilter] = useState('');
@@ -126,8 +128,9 @@ function RecordsPage({ onNavigate }) {
                 // If it's today but no records for today exist yet, clear details
                 setDayDetails({ bills: [], expenses: [], isTodayView: true });
             } else {
-                // Clear dayDetails if we switch away from today and no modal is open
-                if (!selectedDate) setDayDetails(null);
+                // Switched away from today: clear only the auto-loaded Today panel, never an open day popup
+                // (checking selectedDate here read a stale value and could wipe a reopened popup)
+                setDayDetails((prev) => (prev?.isTodayView ? null : prev));
             }
         } catch (error) {
             console.error('Error loading records:', error);
@@ -153,6 +156,11 @@ function RecordsPage({ onNavigate }) {
             setIsLoading(false);
         }
     };
+
+    // Coming back from editing a bill: reopen the day popup it was opened from
+    useEffect(() => {
+        if (restoreView?.openDate) loadDayDetails(restoreView.openDate);
+    }, [restoreView]);
 
     // Load details for a specific day
     const loadDayDetails = async (date) => {
@@ -232,7 +240,12 @@ function RecordsPage({ onNavigate }) {
                 customerName: bill.bill_type === 'CREDIT' ? bill.customer_name : null,
                 supplierId: bill.supplier_id,
                 supplierName: bill.supplier_name,
-                billDate: bill.created_at ? bill.created_at.split('T')[0] : getTodayLocaleDate()
+                billDate: bill.created_at ? bill.created_at.split('T')[0] : getTodayLocaleDate(),
+                // After printing / saving / going back, return to this same Records view
+                returnTo: {
+                    page: 'records',
+                    data: { filter, customStartDate, customEndDate, tab, openDate: selectedDate }
+                }
             };
 
             // Navigate to billing page with pre-filled cart
@@ -250,16 +263,16 @@ function RecordsPage({ onNavigate }) {
         try {
             const success = await window.electronAPI.deleteBill(billToDelete.id);
             if (success) {
-                setToast({ message: '✅ Bill Deleted Successfully', type: 'success' });
+                setToast({ message: 'Bill Deleted Successfully', type: 'success' });
                 // Refresh data
                 loadRecords();
                 if (selectedDate) loadDayDetails(selectedDate);
             } else {
-                setToast({ message: '❌ Bill not found or already deleted', type: 'error' });
+                setToast({ message: 'Bill not found or already deleted', type: 'error' });
             }
         } catch (error) {
             console.error('Error deleting bill:', error);
-            setToast({ message: `❌ Failed to delete bill: ${error.message || 'Unknown error'}`, type: 'error' });
+            setToast({ message: `Failed to delete bill: ${error.message || 'Unknown error'}`, type: 'error' });
         } finally {
             setBillToDelete(null);
         }
@@ -352,9 +365,9 @@ function RecordsPage({ onNavigate }) {
                 {/* Custom Date Range */}
                 {filter === 'custom' && (
                     <div className="custom-range">
-                        <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="date-input" />
+                        <DateInput value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="date-input" />
                         <span>to</span>
-                        <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="date-input" />
+                        <DateInput value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="date-input" />
                     </div>
                 )}
 

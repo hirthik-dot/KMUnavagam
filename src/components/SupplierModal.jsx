@@ -15,6 +15,16 @@ function SupplierModal({ suppliers, onSelect, onCancel, initialSupplierId = null
         onSelect(supplier);
     };
 
+    // A <select> never submits its form on Enter (Windows re-opens the dropdown instead).
+    // Once a staff member is chosen, Enter continues to the preview; with none chosen it still opens the list.
+    // (While the dropdown list is open, keys go to the list itself, so choosing with Enter still works.)
+    const handleSelectKeyDown = (e) => {
+        if (e.key === 'Enter' && selectedSupplierId) {
+            e.preventDefault();
+            handleSubmit(e);
+        }
+    };
+
     return (
         <div className="supplier-overlay" onClick={onCancel}>
             <div className="supplier-modal" onClick={(e) => e.stopPropagation()}>
@@ -29,6 +39,7 @@ function SupplierModal({ suppliers, onSelect, onCancel, initialSupplierId = null
                         <select 
                             value={selectedSupplierId} 
                             onChange={(e) => setSelectedSupplierId(e.target.value)}
+                            onKeyDown={handleSelectKeyDown}
                             required
                             autoFocus
                         >

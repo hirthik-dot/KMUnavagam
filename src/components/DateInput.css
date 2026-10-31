@@ -1,0 +1,23 @@
+/* Native date text hidden (it follows the Windows region format); DateInput draws dd/mm/yyyy over it.
+   Only the text part is hidden, so the field keeps its own colour (no transitions to fight with). */
+.date-input-native {
+    cursor: pointer;
+}
+
+.date-input-native::-webkit-datetime-edit {
+    opacity: 0;
+}
+
+.date-input-display {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.date-input-display.empty {
+    opacity: 0.5;
+}

@@ -677,7 +677,9 @@
 
 /* Individual bill modal */
 .modal-overlay.nested {
-    z-index: 1000;
+    /* Must sit above the day-details popup. Other pages' CSS sets .modal-overlay to z-index 2000
+       globally, so 1000 put the bill view BEHIND the day popup */
+    z-index: 3000;
     background: rgba(0, 0, 0, 0.4);
     /* Slightly lighter overlay for nested modal */
 }
@@ -852,6 +854,7 @@
 
 /* Danger Modal */
 .modal-overlay.danger {
+    z-index: 3100; /* above the day popup and the bill view */
     background: rgba(127, 29, 29, 0.4);
     backdrop-filter: blur(4px);
 }

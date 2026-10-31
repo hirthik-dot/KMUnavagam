@@ -131,6 +131,7 @@ function Cart({ cart, onUpdateQuantity, onRemoveItem, total, onPrint, className 
                     <button
                         className="cart-print-btn"
                         onClick={onPrint}
+                        title="Print Bill (Enter)"
                     >
                         Print Bill
                     </button>

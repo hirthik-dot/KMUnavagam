@@ -5,7 +5,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Footer from '../components/Footer';
 import { formatToDisplayDate, getTodayLocaleDate } from '../utils/DateUtils';
 import './StaffPage.css';
-import { formatMoney, roundMoney } from '../utils/money';
+import { formatMoney, roundMoney } from '../utils/money';
+import DateInput from '../components/DateInput';
 
 function StaffPage({ onNavigate }) {
     const [isLoading, setIsLoading] = useState(false);
@@ -70,7 +71,7 @@ function StaffPage({ onNavigate }) {
             await window.electronAPI.setStaffPin(pinInput);
             setPinError('');
             setLockState('open');
-            setToast({ message: '✅ PIN created. Keep it private.', type: 'success' });
+            setToast({ message: 'PIN created. Keep it private.', type: 'success' });
         } catch (error) {
             setPinError('PIN must be 4 to 6 digits.');
         } finally {
@@ -143,9 +144,9 @@ function StaffPage({ onNavigate }) {
             setNewStaff(emptyNewStaff());
             setShowAddStaffForm(false);
             loadStaff();
-            setToast({ message: '✅ Employee added successfully', type: 'success' });
+            setToast({ message: 'Employee added successfully', type: 'success' });
         } catch (error) {
-            setToast({ message: '❌ Failed to add employee', type: 'error' });
+            setToast({ message: 'Failed to add employee', type: 'error' });
         }
     };
 
@@ -170,9 +171,9 @@ function StaffPage({ onNavigate }) {
             if (selectedStaffDetail?.id === editingStaff.id) {
                 loadStaffDetails(editingStaff.id);
             }
-            setToast({ message: '✅ Employee updated successfully', type: 'success' });
+            setToast({ message: 'Employee updated successfully', type: 'success' });
         } catch (error) {
-            setToast({ message: '❌ Failed to update employee', type: 'error' });
+            setToast({ message: 'Failed to update employee', type: 'error' });
         }
     };
 
@@ -183,11 +184,11 @@ function StaffPage({ onNavigate }) {
             onConfirm: async () => {
                 try {
                     await window.electronAPI.deleteEmployee(staff.id);
-                    setToast({ message: '✅ Employee deleted', type: 'success' });
+                    setToast({ message: 'Employee deleted', type: 'success' });
                     loadStaff();
                     setSelectedStaffDetail(null);
                 } catch (error) {
-                    setToast({ message: '❌ Failed to delete employee', type: 'error' });
+                    setToast({ message: 'Failed to delete employee', type: 'error' });
                 } finally {
                     setConfirmDialog(null);
                 }
@@ -204,10 +205,10 @@ function StaffPage({ onNavigate }) {
         try {
             if (editingTransactionId) {
                 await window.electronAPI.updateStaffTransaction(editingTransactionId, amt, transDesc, transDate);
-                setToast({ message: '✅ Record updated', type: 'success' });
+                setToast({ message: 'Record updated', type: 'success' });
             } else {
                 await window.electronAPI.addStaffTransaction(selectedStaffDetail.id, amt, transactionType, transDesc, transDate);
-                setToast({ message: '✅ Record added', type: 'success' });
+                setToast({ message: 'Record added', type: 'success' });
             }
             loadStaffDetails(selectedStaffDetail.id);
             loadStaff();
@@ -216,7 +217,7 @@ function StaffPage({ onNavigate }) {
             setEditingTransactionId(null);
             setShowTransactionForm(false);
         } catch (error) {
-            setToast({ message: '❌ Failed to save', type: 'error' });
+            setToast({ message: 'Failed to save', type: 'error' });
         }
     };
 
@@ -226,13 +227,13 @@ function StaffPage({ onNavigate }) {
             onConfirm: async () => {
                 try {
                     await window.electronAPI.deleteStaffTransaction(transactionId);
-                    setToast({ message: '✅ Record deleted', type: 'success' });
+                    setToast({ message: 'Record deleted', type: 'success' });
                     if (selectedStaffDetail) {
                         loadStaffDetails(selectedStaffDetail.id);
                     }
                     loadStaff();
                 } catch (error) {
-                    setToast({ message: '❌ Failed to delete', type: 'error' });
+                    setToast({ message: 'Failed to delete', type: 'error' });
                 } finally {
                     setConfirmDialog(null);
                 }
@@ -247,16 +248,16 @@ function StaffPage({ onNavigate }) {
         try {
             if (skipForm.type === 'ABSENT') {
                 await window.electronAPI.markEmployeeAbsent(selectedStaffDetail.id, skipForm.date);
-                setToast({ message: `✅ Marked absent on ${formatToDisplayDate(skipForm.date)}`, type: 'success' });
+                setToast({ message: `Marked absent on ${formatToDisplayDate(skipForm.date)}`, type: 'success' });
                 loadStaffDetails(selectedStaffDetail.id);
             } else {
                 await window.electronAPI.markShopHoliday(skipForm.date);
-                setToast({ message: `✅ Shop holiday on ${formatToDisplayDate(skipForm.date)} — no auto wages`, type: 'success' });
+                setToast({ message: `Shop holiday on ${formatToDisplayDate(skipForm.date)} — no auto wages`, type: 'success' });
             }
             loadStaff();
             setSkipForm(null);
         } catch (error) {
-            setToast({ message: '❌ Failed to save', type: 'error' });
+            setToast({ message: 'Failed to save', type: 'error' });
         }
     };
 
@@ -267,11 +268,11 @@ function StaffPage({ onNavigate }) {
             onConfirm: async () => {
                 try {
                     await window.electronAPI.removeWageSkip(selectedStaffDetail.id, skip.skip_date);
-                    setToast({ message: '✅ Daily wage added back', type: 'success' });
+                    setToast({ message: 'Daily wage added back', type: 'success' });
                     loadStaffDetails(selectedStaffDetail.id);
                     loadStaff();
                 } catch (error) {
-                    setToast({ message: '❌ Failed to update', type: 'error' });
+                    setToast({ message: 'Failed to update', type: 'error' });
                 } finally {
                     setConfirmDialog(null);
                 }
@@ -337,9 +338,7 @@ function StaffPage({ onNavigate }) {
             {!!staff.auto_wage && (
                 <div className="form-group">
                     <label>Auto Wage Starts From</label>
-                    <input
-                        type="date"
-                        value={staff.wage_start_date || ''}
+                    <DateInput value={staff.wage_start_date || ''}
                         onChange={(e) => setStaff({ ...staff, wage_start_date: e.target.value })}
                     />
                 </div>
@@ -728,7 +727,7 @@ function StaffPage({ onNavigate }) {
                         <form onSubmit={handleSaveSkip}>
                             <div className="form-group">
                                 <label>Date</label>
-                                <input type="date" required value={skipForm.date} onChange={(e) => setSkipForm({ ...skipForm, date: e.target.value })} />
+                                <DateInput required value={skipForm.date} onChange={(e) => setSkipForm({ ...skipForm, date: e.target.value })} />
                             </div>
                             <div className="modal-actions">
                                 <button type="button" className="btn-cancel" onClick={() => setSkipForm(null)}>Cancel</button>
@@ -757,7 +756,7 @@ function StaffPage({ onNavigate }) {
                             </div>
                             <div className="form-group">
                                 <label>Date</label>
-                                <input type="date" value={transDate} onChange={(e) => setTransDate(e.target.value)} />
+                                <DateInput value={transDate} onChange={(e) => setTransDate(e.target.value)} />
                             </div>
                             <div className="modal-actions">
                                 <button type="button" className="btn-cancel" onClick={() => { setShowTransactionForm(false); setEditingTransactionId(null); }}>Cancel</button>

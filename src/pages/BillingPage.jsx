@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import FoodCard from '../components/FoodCard';
 import Cart from '../components/Cart';
 import SearchBar from '../components/SearchBar';
@@ -8,7 +8,8 @@ import SupplierModal from '../components/SupplierModal';
 import { getTodayLocaleDate } from '../utils/DateUtils';
 import { DISPLAY_LANGUAGE_SETTING_KEY, DEFAULT_DISPLAY_LANGUAGE } from '../utils/itemLanguage';
 import './BillingPage.css';
-import { roundMoney } from '../utils/money';
+import { roundMoney } from '../utils/money';
+import DateInput from '../components/DateInput';
 
 function BillingPage({ onNavigate, creditCustomer }) {
     const [foodItems, setFoodItems] = useState([]);
@@ -33,6 +34,42 @@ function BillingPage({ onNavigate, creditCustomer }) {
     const [toast, setToast] = useState(null);
     const [billDate, setBillDate] = useState(getTodayLocaleDate());
     const [displayLanguage, setDisplayLanguage] = useState(DEFAULT_DISPLAY_LANGUAGE);
+
+    // Keyboard shortcuts: "/" focus search, Enter print bill, Esc close staff picker / clear search.
+    // The ref always holds this render's handlers, so the listener never acts on a stale cart.
+    const shortcutsRef = useRef({});
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            const { print, supplierModalOpen, closeSupplierModal, searchQuery: query, clearSearch } = shortcutsRef.current;
+            const target = e.target;
+            const typing = target && (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable);
+
+            if (e.key === 'Escape') {
+                if (supplierModalOpen) {
+                    closeSupplierModal();
+                } else if (query) {
+                    clearSearch();
+                    if (target && target.classList?.contains('search-input')) target.blur();
+                }
+                return;
+            }
+            // Never steal keys while typing (price / quantity edits and the staff picker use Enter themselves)
+            if (typing || e.ctrlKey || e.altKey || e.metaKey) return;
+
+            if (e.key === '/') {
+                e.preventDefault();
+                document.querySelector('.search-input')?.focus();
+            } else if (e.key === 'Enter') {
+                // A focused button handles Enter itself; any open popup takes priority over printing
+                if (target?.tagName === 'BUTTON') return;
+                if (supplierModalOpen || document.querySelector('.modal-overlay, .confirm-overlay, .pending-wages-overlay')) return;
+                e.preventDefault();
+                print();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
 
     // Load food items and categories when component mounts
     useEffect(() => {
@@ -272,6 +309,14 @@ function BillingPage({ onNavigate, creditCustomer }) {
         onNavigate('print-preview', billData);
     }
 
+    shortcutsRef.current = {
+        print: handlePrintBill,
+        supplierModalOpen: showSupplierModal,
+        closeSupplierModal: () => setShowSupplierModal(false),
+        searchQuery,
+        clearSearch: () => setSearchQuery(''),
+    };
+
     if (loading) {
         return (
             <div className="loading-container">
@@ -307,9 +352,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
                     <p><i className="fa-solid fa-pen-to-square"></i> Editing Bill #{originalBillId} - Make changes and print to update</p>
                     <div className="banner-date-picker">
                         <label>Bill Date:</label>
-                        <input 
-                            type="date" 
-                            value={billDate} 
+                        <DateInput value={billDate} 
                             onChange={(e) => setBillDate(e.target.value)}
                         />
                     </div>
@@ -322,9 +365,7 @@ function BillingPage({ onNavigate, creditCustomer }) {
                     <p><i className="fa-solid fa-file-pen"></i> Billing for Credit Customer: <strong>{creditCustomer.customerName}</strong></p>
                     <div className="banner-date-picker">
                         <label>Bill Date:</label>
-                        <input 
-                            type="date" 
-                            value={billDate} 
+                        <DateInput value={billDate} 
                             onChange={(e) => setBillDate(e.target.value)}
                         />
                     </div>

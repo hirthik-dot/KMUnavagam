@@ -5,7 +5,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import Toast from '../components/Toast';
 import { formatToDisplayDate, getTodayLocaleDate } from '../utils/DateUtils';
 import './ExpensesPage.css';
-import { formatMoney, roundMoney } from '../utils/money';
+import { formatMoney, roundMoney } from '../utils/money';
+import DateInput from '../components/DateInput';
 import './CreditDetailsPage.css'; // For detail styling consistency
 import './CreditsPage.css'; // For list styling consistency
 
@@ -121,11 +122,11 @@ function ExpensesPage({ onNavigate, initialTab }) {
     // --- Daily Expense Handlers ---
     const handleSaveExpense = async () => {
         if (!description.trim()) {
-            setToast({ message: '⚠️ Please enter description', type: 'error' });
+            setToast({ message: 'Please enter description', type: 'warning' });
             return;
         }
         if (!amount || parseFloat(amount) <= 0) {
-            setToast({ message: '⚠️ Please enter valid amount', type: 'error' });
+            setToast({ message: 'Please enter valid amount', type: 'warning' });
             return;
         }
 
@@ -133,11 +134,11 @@ function ExpensesPage({ onNavigate, initialTab }) {
         try {
             if (editingId) {
                 await window.electronAPI.updateExpense(editingId, description.trim(), parseFloat(amount), expenseDate);
-                setToast({ message: '✅ Expense updated', type: 'success' });
+                setToast({ message: 'Expense updated', type: 'success' });
                 setEditingId(null);
             } else {
                 await window.electronAPI.addExpense(description.trim(), parseFloat(amount), expenseDate);
-                setToast({ message: '✅ Expense added', type: 'success' });
+                setToast({ message: 'Expense added', type: 'success' });
             }
 
             setDescription('');
@@ -146,7 +147,7 @@ function ExpensesPage({ onNavigate, initialTab }) {
             loadTodayExpenses();
             loadVendors();
         } catch (error) {
-            setToast({ message: '❌ Error saving expense', type: 'error' });
+            setToast({ message: 'Error saving expense', type: 'error' });
         } finally {
             setIsLoading(false);
         }
@@ -158,14 +159,14 @@ function ExpensesPage({ onNavigate, initialTab }) {
             onConfirm: async () => {
                 try {
                     await window.electronAPI.deleteExpense(id);
-                    setToast({ message: '✅ Expense deleted', type: 'success' });
+                    setToast({ message: 'Expense deleted', type: 'success' });
                     loadTodayExpenses();
                     loadVendors();
                     if (activeTab === 'history') {
                         loadExpenseHistory();
                     }
                 } catch (error) {
-                    setToast({ message: '❌ Error deleting expense', type: 'error' });
+                    setToast({ message: 'Error deleting expense', type: 'error' });
                 } finally {
                     setConfirmDialog(null);
                 }
@@ -183,9 +184,9 @@ function ExpensesPage({ onNavigate, initialTab }) {
             setNewVendor({ name: '', phone: '' });
             setShowAddVendorForm(false);
             loadVendors();
-            setToast({ message: '✅ Vendor added successfully', type: 'success' });
+            setToast({ message: 'Vendor added successfully', type: 'success' });
         } catch (error) {
-            setToast({ message: '❌ Failed to add vendor', type: 'error' });
+            setToast({ message: 'Failed to add vendor', type: 'error' });
         }
     };
 
@@ -195,11 +196,11 @@ function ExpensesPage({ onNavigate, initialTab }) {
             onConfirm: async () => {
                 try {
                     await window.electronAPI.deleteVendor(id);
-                    setToast({ message: '✅ Vendor deleted', type: 'success' });
+                    setToast({ message: 'Vendor deleted', type: 'success' });
                     setSelectedVendorDetail(null);
                     loadVendors();
                 } catch (error) {
-                    setToast({ message: '❌ Error deleting vendor', type: 'error' });
+                    setToast({ message: 'Error deleting vendor', type: 'error' });
                 } finally {
                     setConfirmDialog(null);
                 }
@@ -216,10 +217,10 @@ function ExpensesPage({ onNavigate, initialTab }) {
         try {
             if (editingTransactionId) {
                 await window.electronAPI.updateVendorTransaction(editingTransactionId, amt, transDesc, transDate);
-                setToast({ message: '✅ Transaction updated', type: 'success' });
+                setToast({ message: 'Transaction updated', type: 'success' });
             } else {
                 await window.electronAPI.addVendorTransaction(selectedVendorDetail.id, amt, transactionType, transDesc, transDate);
-                setToast({ message: '✅ Transaction recorded', type: 'success' });
+                setToast({ message: 'Transaction recorded', type: 'success' });
             }
             loadVendorDetails(selectedVendorDetail.id);
             loadVendors();
@@ -229,7 +230,7 @@ function ExpensesPage({ onNavigate, initialTab }) {
             setShowTransactionForm(false);
             loadTodayExpenses(); 
         } catch (error) {
-            setToast({ message: '❌ Failed to save transaction', type: 'error' });
+            setToast({ message: 'Failed to save transaction', type: 'error' });
         }
     };
 
@@ -240,17 +241,17 @@ function ExpensesPage({ onNavigate, initialTab }) {
                 try {
                     const changes = await window.electronAPI.deleteVendorTransaction(transactionId);
                     if (changes > 0) {
-                        setToast({ message: '✅ Transaction deleted', type: 'success' });
+                        setToast({ message: 'Transaction deleted', type: 'success' });
                         if (selectedVendorDetail) {
                             loadVendorDetails(selectedVendorDetail.id);
                         }
                         loadVendors();
                         loadTodayExpenses();
                     } else {
-                        setToast({ message: '⚠️ Already deleted', type: 'error' });
+                        setToast({ message: 'Already deleted', type: 'warning' });
                     }
                 } catch (error) {
-                    setToast({ message: '❌ Failed to delete', type: 'error' });
+                    setToast({ message: 'Failed to delete', type: 'error' });
                 } finally {
                     setConfirmDialog(null);
                 }
@@ -330,10 +331,8 @@ function ExpensesPage({ onNavigate, initialTab }) {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Date</label>
-                                <input
-                                    className="form-input"
-                                    type="date"
-                                    value={expenseDate}
+                                <DateInput
+                                    className="form-input" value={expenseDate}
                                     onChange={(e) => setExpenseDate(e.target.value)}
                                 />
                             </div>
@@ -438,11 +437,11 @@ function ExpensesPage({ onNavigate, initialTab }) {
                                 <div className="filter-row custom-dates">
                                     <div className="filter-group">
                                         <label>From</label>
-                                        <input type="date" value={historyStartDate} onChange={(e) => setHistoryStartDate(e.target.value)} />
+                                        <DateInput value={historyStartDate} onChange={(e) => setHistoryStartDate(e.target.value)} />
                                     </div>
                                     <div className="filter-group">
                                         <label>To</label>
-                                        <input type="date" value={historyEndDate} onChange={(e) => setHistoryEndDate(e.target.value)} />
+                                        <DateInput value={historyEndDate} onChange={(e) => setHistoryEndDate(e.target.value)} />
                                     </div>
                                     <button className="apply-btn" onClick={loadExpenseHistory}>Apply</button>
                                 </div>
@@ -662,7 +661,7 @@ function ExpensesPage({ onNavigate, initialTab }) {
                             </div>
                             <div className="form-group">
                                 <label>Date</label>
-                                <input type="date" value={transDate} onChange={(e) => setTransDate(e.target.value)} />
+                                <DateInput value={transDate} onChange={(e) => setTransDate(e.target.value)} />
                             </div>
                             <div className="modal-actions">
                                 <button type="button" className="btn-cancel" onClick={() => { setShowTransactionForm(false); setEditingTransactionId(null); }}>Cancel</button>

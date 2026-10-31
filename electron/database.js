@@ -1365,6 +1365,7 @@ function getBillsByDate(date) {
       b.id,
       b.created_at,
       b.total_amount,
+      b.supplier_id,
       TIME(b.created_at) as time,
       CASE 
         WHEN cc.is_deleted = 1 THEN cc.name || ' (Deleted)' 
