@@ -31,6 +31,8 @@ function AdminPage({ onNavigate }) {
     const [pinForm, setPinForm] = useState(null);
     // Reset PIN form (asks for the reset password given by LancingHub); null when hidden
     const [resetForm, setResetForm] = useState(null);
+    // Screen size (zoom factor, 1 = 100%); also updated when zoomed with Ctrl + / Ctrl -
+    const [zoomFactor, setZoomFactor] = useState(1);
 
     // Form state for NEW item
     const [formData, setFormData] = useState({
@@ -58,6 +60,8 @@ function AdminPage({ onNavigate }) {
         loadCategories();
         loadLanguageSettings();
         window.electronAPI.hasStaffPin().then(setStaffLockEnabled).catch(() => {});
+        window.electronAPI.getZoom().then(setZoomFactor).catch(() => {});
+        return window.electronAPI.onZoomChanged(setZoomFactor);
     }, []);
 
     /**
@@ -719,6 +723,28 @@ function AdminPage({ onNavigate }) {
                                 {lang.label}
                             </button>
                         ))}
+                    </div>
+                </div>
+
+                {/* Screen Size (zoom) Section */}
+                <div className="screen-size-section card">
+                    <h2 className="section-title">
+                        <i className="fas fa-magnifying-glass"></i> Screen Size
+                    </h2>
+                    <p className="print-settings-hint">
+                        Make everything bigger or smaller to fit this screen. Shortcuts: Ctrl + (bigger), Ctrl − (smaller), Ctrl 0 (normal). The size is remembered.
+                    </p>
+                    <div className="print-language-options">
+                        <button type="button" className="print-language-option" onClick={() => window.electronAPI.stepZoom(-1).then(setZoomFactor)} disabled={zoomFactor <= 0.5}>
+                            <i className="fas fa-minus"></i> Smaller
+                        </button>
+                        <span className="zoom-value">{Math.round(zoomFactor * 100)}%</span>
+                        <button type="button" className="print-language-option" onClick={() => window.electronAPI.stepZoom(1).then(setZoomFactor)} disabled={zoomFactor >= 2}>
+                            <i className="fas fa-plus"></i> Bigger
+                        </button>
+                        <button type="button" className="print-language-option" onClick={() => window.electronAPI.resetZoom().then(setZoomFactor)} disabled={Math.abs(zoomFactor - 1) < 0.01}>
+                            <i className="fas fa-rotate-left"></i> Normal (100%)
+                        </button>
                     </div>
                 </div>
 

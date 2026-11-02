@@ -31,6 +31,25 @@ app.on('browser-window-created', (_, win) => {
       }
       report(home, 'home screen loads');
 
+      // Zoom keys are handled by the app itself (before-input-event) and saved in app settings
+      const press = async (keyCode) => {
+        win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers: ['control'] });
+        win.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers: ['control'] });
+        await new Promise((r) => setTimeout(r, 300));
+      };
+      const zoomNow = () => Math.round(win.webContents.getZoomFactor() * 100);
+      await press('0');
+      const z100 = zoomNow();
+      await press('=');
+      const zIn = zoomNow();
+      await press('-'); await press('-');
+      const zOut = zoomNow();
+      await press('0');
+      report(z100 === 100 && zIn === 110 && zOut === 90 && zoomNow() === 100,
+        `zoom keys: Ctrl 0 = ${z100}%, Ctrl + = ${zIn}%, Ctrl - twice = ${zOut}%, Ctrl 0 = ${zoomNow()}%`);
+      const savedZoom = require(path.join(asarPath, 'electron', 'database.js')).getSetting('zoomFactor');
+      report(savedZoom === '1', `zoom saved in app settings (${savedZoom})`);
+
       const electronDir = path.join(asarPath, 'electron');
       const db = require(path.join(electronDir, 'database.js'));
       const item = db.getAllItems()[0];

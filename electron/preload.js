@@ -35,6 +35,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Installed version, e.g. "1.0.3"
     getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 
+    // Screen size (zoom): factor 1 = 100%
+    getZoom: () => ipcRenderer.invoke('zoom:get'),
+    stepZoom: (direction) => ipcRenderer.invoke('zoom:step', direction),
+    resetZoom: () => ipcRenderer.invoke('zoom:reset'),
+    onZoomChanged: (callback) => {
+        const listener = (event, factor) => callback(factor);
+        ipcRenderer.on('zoom-changed', listener);
+        return () => ipcRenderer.removeListener('zoom-changed', listener);
+    },
+
     // Write a screen error to the app log ({ message, stack, page })
     logError: (details) => ipcRenderer.invoke('app:logError', details),
 

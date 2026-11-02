@@ -68,6 +68,7 @@ try {
 
 // Now safe to import database module
 const db = require('./database');
+const zoom = require('./zoom');
 
 // PDF/Excel statement export is loaded only when used, so a problem in it can never stop the app
 // from opening: billing keeps working and only the export shows an error.
@@ -122,6 +123,9 @@ function createWindow() {
     // In production, load the built files
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+
+  // App-controlled zoom (keys, Ctrl + wheel, saved in app settings)
+  zoom.attach(mainWindow);
 
   // If the screen part of the app crashes or hangs, log it and reload instead of leaving a blank window
   mainWindow.webContents.on('render-process-gone', (event, details) => {
@@ -1211,6 +1215,9 @@ function setupIPCHandlers() {
 
   // Installed app version (package.json "version", bumped on every build:win) — shown in the footer
   ipcMain.handle('app:getVersion', () => app.getVersion());
+
+  // Screen size (zoom) for the Admin card
+  zoom.registerIpc(ipcMain, () => mainWindow);
 
   // Errors from the screens (React) are written to the same log file as the main process
   ipcMain.handle('app:logError', (event, details) => {
